@@ -81,17 +81,17 @@ class Expr(ABC):
     pass
 
 
-@dataclass
+@dataclass(frozen=True)
 class PositionExpr(Expr):
     pass
 
 
-@dataclass
+@dataclass(frozen=True)
 class SubstringExpr(Expr):
     pass
 
 
-@dataclass
+@dataclass(frozen=True)
 class Var(Expr):
     i: PositiveInt
 
@@ -99,14 +99,14 @@ class Var(Expr):
         return f"Var({self.i})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class MatchPos(PositionExpr):
     token: Regex | str
     k: int
     dir: Dir
 
 
-@dataclass
+@dataclass(frozen=True)
 class ConstantPos(PositionExpr):
     k: int
 
@@ -114,7 +114,7 @@ class ConstantPos(PositionExpr):
         return f"ConstantPos({self.k})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ConstantStr(SubstringExpr):
     s: str
 
@@ -122,7 +122,7 @@ class ConstantStr(SubstringExpr):
         return f"ConstantStr({self.s})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class SubStr(SubstringExpr):
     var: Var
     lexpr: PositionExpr
@@ -132,9 +132,12 @@ class SubStr(SubstringExpr):
         return f"SubStr({self.var}, {self.lexpr}, {self.rexpr})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Concat:
-    exprs: list[SubstringExpr]
+    exprs: tuple[SubstringExpr, ...]
+
+    def __repr__(self):
+        return f"Concat{self.exprs}"
 
 
 # Eval
