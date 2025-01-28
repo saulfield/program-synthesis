@@ -1,0 +1,208 @@
+import re
+from abc import ABC
+from enum import Enum, auto
+
+from pydantic import PositiveInt
+from pydantic.dataclasses import dataclass
+
+# Tokens
+
+
+class Regex(Enum):
+    ProperCase = auto()
+    CAPS = auto()
+    Lowercase = auto()
+    Digits = auto()
+    Alphabets = auto()
+    Alphanumeric = auto()
+    Whitespace = auto()
+    StartT = auto()
+    EndT = auto()
+    ProperCaseWSpaces = auto()
+    CAPSWSpaces = auto()
+    LowercaseWSpaces = auto()
+    AlphabetsWSpaces = auto()
+    ConstantStr = auto()
+
+
+TOKEN_PATTERNS = {
+    # ProperCase: Uppercase followed by lowercase (e.g., "Word")
+    Regex.ProperCase: re.compile(r"[A-Z][a-z]+"),
+    # CAPS: One or more uppercase letters
+    Regex.CAPS: re.compile(r"[A-Z]+"),
+    # Lowercase: One or more lowercase letters
+    Regex.Lowercase: re.compile(r"[a-z]+"),
+    # Digits: One or more digits
+    Regex.Digits: re.compile(r"\d+"),
+    # Alphabets: One or more letters (upper or lower)
+    Regex.Alphabets: re.compile(r"[A-Za-z]+"),
+    # Alphanumeric: One or more letters or numbers
+    Regex.Alphanumeric: re.compile(r"[A-Za-z0-9]+"),
+    # Whitespace: One or more whitespace characters
+    Regex.Whitespace: re.compile(r"\s+"),
+    # StartT: Start of string
+    Regex.StartT: re.compile(r"^"),
+    # EndT: End of string
+    Regex.EndT: re.compile(r"$"),
+    # ProperCaseWSpaces: ProperCase words with spaces between
+    Regex.ProperCaseWSpaces: re.compile(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*"),
+    # CAPSWSpaces: CAPS words with spaces between
+    Regex.CAPSWSpaces: re.compile(r"[A-Z]+(?:\s+[A-Z]+)*"),
+    # LowercaseWSpaces: lowercase words with spaces between
+    Regex.LowercaseWSpaces: re.compile(r"[a-z]+(?:\s+[a-z]+)*"),
+    # AlphabetsWSpaces: Letter words with spaces between
+    Regex.AlphabetsWSpaces: re.compile(r"[A-Za-z]+(?:\s+[A-Za-z]+)*"),
+}
+
+
+@dataclass
+class TokenMatch:
+    k: int  # Match number (1-based index)
+    substr: str  # The matched substring
+    start: int  # Start index
+    end: int  # End index
+
+
+# Grammar:
+# e   = Concat(f1, · · · , fn)
+# f   = ConstantStr(s)
+#     | SubStr(vi, pl, pr )
+# p   = (τ, k, Dir)
+#     | ConstantPos(k)
+# Dir = Start | End
+
+
+class Dir(Enum):
+    Start = 1
+    End = 2
+
+
+class Expr(ABC):
+    pass
+
+
+@dataclass
+class PositionExpr(Expr):
+    pass
+
+
+@dataclass
+class SubstringExpr(Expr):
+    pass
+
+
+@dataclass
+class Var(Expr):
+    i: PositiveInt
+
+    def __repr__(self):
+        return f"Var({self.i})"
+
+
+@dataclass
+class MatchPos(PositionExpr):
+    token: Regex | str
+    k: int
+    dir: Dir
+
+
+@dataclass
+class ConstantPos(PositionExpr):
+    k: int
+
+    def __repr__(self):
+        return f"ConstantPos({self.k})"
+
+
+@dataclass
+class ConstantStr(SubstringExpr):
+    s: str
+
+    def __repr__(self):
+        return f"ConstantStr({self.s})"
+
+
+@dataclass
+class SubStr(SubstringExpr):
+    var: Var
+    lexpr: PositionExpr
+    rexpr: PositionExpr
+
+    def __repr__(self):
+        return f"SubStr({self.var}, {self.lexpr}, {self.rexpr})"
+
+
+@dataclass
+class Concat:
+    exprs: list[SubstringExpr]
+
+
+# Eval
+
+_constant_str_patterns = {}
+
+
+def get_constant_str_pattern(s: str) -> re.Pattern:
+    if s not in _constant_str_patterns:
+        _constant_str_patterns[s] = re.compile(re.escape(s))
+    return _constant_str_patterns[s]
+
+
+def find_matches(string: str, token: Regex | str) -> list[TokenMatch]:
+    matches = []
+
+    if isinstance(token, str):
+        pattern = get_constant_str_pattern(token)
+    else:
+        assert isinstance(token, Regex)
+        pattern = TOKEN_PATTERNS[token]
+
+    for k, match in enumerate(pattern.finditer(string), 1):
+        matches.append(
+            TokenMatch(
+                k=k,
+                substr=match.group(),
+                start=match.start() + 1,
+                end=match.end() + 1,
+            )
+        )
+
+    return matches
+
+
+def token_match(string: str, token: Regex | str, k: int):
+    matches = find_matches(string, token)
+    i = k - 1 if k > 0 else len(matches) + k
+    return matches[i]
+
+
+def substr(string: str, start: int, end: int) -> str:
+    return string[start - 1 : end - 1]
+
+
+def eval_pos(s: str, expr: PositionExpr) -> int:
+    match expr:
+        case ConstantPos(k):
+            return k if k > 0 else len(s) + k
+        case MatchPos(token, k, dir):
+            matches = find_matches(s, token)
+            i = k - 1 if k > 0 else len(matches) + k
+            m = matches[i]
+            return m.start if dir is Dir.Start else m.end
+        case _:
+            raise ValueError(f"Unsupported expression: {expr}")
+
+
+def eval_expr(env: dict[int, str], expr: Expr) -> str:
+    match expr:
+        case Concat(exprs):
+            return "".join([eval_expr(env, e) for e in exprs])
+        case ConstantStr(s):
+            return s
+        case SubStr(Var(i), lexpr, rexpr):
+            s = env[i]
+            lpos = eval_pos(s, lexpr)
+            rpos = eval_pos(s, rexpr)
+            return substr(s, lpos, rpos)
+        case _:
+            raise ValueError(f"Unsupported expression: {expr}")
