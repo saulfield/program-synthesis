@@ -133,7 +133,7 @@ class SubStr(SubstringExpr):
 
 
 @dataclass(frozen=True)
-class Concat:
+class Concat(Expr):
     exprs: tuple[SubstringExpr, ...]
 
     def __repr__(self):
@@ -183,29 +183,46 @@ def substr(string: str, start: int, end: int) -> str:
     return string[start - 1 : end - 1]
 
 
+pos_cache: dict[PositionExpr, int] = dict()
+expr_cache: dict[Expr, str] = dict()
+
+
 def eval_pos(s: str, expr: PositionExpr) -> int:
+    key = (s, expr)
+    val = pos_cache.get(key)
+    if val:
+        return val
     match expr:
         case ConstantPos(k):
-            return k if k > 0 else len(s) + k
+            val = k if k > 0 else len(s) + k
         case MatchPos(token, k, dir):
             matches = find_matches(s, token)
             i = k - 1 if k > 0 else len(matches) + k
             m = matches[i]
-            return m.start if dir is Dir.Start else m.end
+            val = m.start if dir is Dir.Start else m.end
         case _:
             raise ValueError(f"Unsupported expression: {expr}")
+    pos_cache[key] = val
+    return val
 
 
 def eval_expr(env: dict[int, str], expr: Expr) -> str:
+    env_hash = hash(tuple(sorted(env.items())))
+    key = (env_hash, expr)
+    val = expr_cache.get(key)
+    if val:
+        return val
     match expr:
         case Concat(exprs):
-            return "".join([eval_expr(env, e) for e in exprs])
+            val = "".join([eval_expr(env, e) for e in exprs])
         case ConstantStr(s):
-            return s
+            val = s
         case SubStr(Var(i), lexpr, rexpr):
             s = env[i]
             lpos = eval_pos(s, lexpr)
             rpos = eval_pos(s, rexpr)
-            return substr(s, lpos, rpos)
+            val = substr(s, lpos, rpos)
         case _:
             raise ValueError(f"Unsupported expression: {expr}")
+    expr_cache[key] = val
+    return val

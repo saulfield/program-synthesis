@@ -1,19 +1,20 @@
 # %%
 import time
 from itertools import product
+from typing import Any
 
 from dsl import *
 
-grammar = {
+GRAMMAR = {
     "e": [["Concat", "f", "f", "f", "f"]],
     "f": [["ConstantStr", "s"], ["SubStr", "p", "p"]],
     "p": [["ConstantPos", "i"]],
-    "s": ["."],
-    "i": [i for i in range(1, 10)],
+    "s": [["str"]],
+    "i": [["int"]],
 }
 
 
-def construct(ast_name: str, args: list):
+def construct(ast_name: str, args: list[Expr]) -> Expr:
     match ast_name:
         case "Concat":
             return Concat(tuple(args))
@@ -31,50 +32,80 @@ def construct(ast_name: str, args: list):
             raise ValueError(f"Unknown AST node: {ast_name}")
 
 
-def synthesize(inputs: list[str], outputs: list[str], max_depth: int = 1):
-    """Bottom-up enumerative synthesis"""
+def eval_any(env: dict[int, str], expr: Expr):
+    match expr:
+        case ConstantPos(_) | MatchPos(_):
+            return eval_pos(env[1], expr)
+        case Concat(_) | ConstantStr(_) | SubStr(_):
+            return eval_expr(env, expr)
+        case _:
+            raise ValueError(f"Unsupported expression: {expr}")
 
-    cache = {non_term: set() for non_term in grammar.keys()}
+
+def synthesize(examples: list[tuple[str, str]]):
+    """Bottom-up enumerative synthesis."""
+
+    inputs = [e[0] for e in examples]
+    outputs = [e[1] for e in examples]
+    env = {1: inputs[0]}
+    term_cache = {non_term: set() for non_term in GRAMMAR.keys()}
 
     # Add all terminals
-    for terminal in grammar["s"]:
-        cache["s"].add(terminal)
-    for terminal in grammar["i"]:
-        cache["i"].add(terminal)
+    novel_chars = set(outputs[0]) - set(inputs[0])
+    term_cache["s"].update(novel_chars)
+    term_cache["i"].update(list(range(1, len(inputs[0]) + 1)))
 
-    for _ in range(max_depth):
+    start = time.perf_counter()
+    for nonterminal in ["p", "f", "e"]:
         # Grow
-        for non_term in ["p", "f", "e"]:
-            for rule in grammar[non_term]:
-                cached_terms = [cache.get(expand_term, set()) for expand_term in rule[1:]]
-                for combination in product(*cached_terms):
-                    new_term = construct(rule[0], list(combination))
-                    if new_term and new_term not in cache[non_term]:
-                        # print(new_term)
-                        cache[non_term].add(new_term)
+        val_cache: dict[Any, set] = dict()
+        for rule in GRAMMAR[nonterminal]:
+            cached_terms = [term_cache.get(expand_term, set()) for expand_term in rule[1:]]
+            for combination in product(*cached_terms):
+                new_term = construct(rule[0], list(combination))
+                if new_term:
+                    val = eval_any(env, new_term)
+                    val_cache.setdefault(val, set())
+                    val_cache[val].add(new_term)
+                    # val_str = f'"{val}"' if isinstance(val, str) else val
+                    # print(f"{new_term} -> {val_str}")
 
-        # Validate
-        # print(len(cache["e"]))
-        env = {1: inputs[0]}
-        for program in cache["e"]:
-            # print(program)
-            # print(eval_expr(env, program))
-            if eval_expr(env, program) == outputs[0]:
-                return program
-    return None
+        # Eliminate equivalent terms
+        for val, term_set in val_cache.items():
+            # TODO: get the "simplest" term from the set
+            new_term = term_set.pop()
+            term_cache[nonterminal].add(new_term)
+    end = time.perf_counter()
+    print(f"Grow + elim: {end - start:0.2f}s")
 
+    # Validate
+    result = None
+    start = time.perf_counter()
+    for program in term_cache["e"]:
+        if eval_expr(env, program) == outputs[0]:
+            result = program
+            break
+    end = time.perf_counter()
+    print(f"Validate took: {end - start:0.2f}s")
+
+    print("Production counts:")
+    for nonterminal, exprs in term_cache.items():
+        print(nonterminal, len(exprs))
+
+    return result
+
+
+# Test
+examples = [("Clark Kent", "C.K.")]
 
 start = time.perf_counter()
+program = synthesize(examples)
+end = time.perf_counter()
 
-inputs = ["Clark Kent"]
-outputs = ["C.K."]
-program = synthesize(inputs, outputs, max_depth=1)
 if program:
     print("Program found!")
     print(program)
 else:
     print("No program found.")
-
-end = time.perf_counter()
 
 print(f"Took: {end - start:0.2f}s")
