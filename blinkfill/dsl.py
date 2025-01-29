@@ -22,35 +22,39 @@ class Regex(Enum):
     CAPSWSpaces = auto()
     LowercaseWSpaces = auto()
     AlphabetsWSpaces = auto()
-    ConstantStr = auto()
+
+    def __repr__(self):
+        # fmt: off
+        match self:
+            case Regex.ProperCase: return "p"
+            case Regex.CAPS: return "C"
+            case Regex.Lowercase: return "l"
+            case Regex.Digits: return "d"
+            case Regex.Alphabets: return "α"
+            case Regex.Alphanumeric: return "αn"
+            case Regex.Whitespace: return "ws"
+            case Regex.StartT: return "∧"
+            case Regex.EndT: return "$"
+            case Regex.ProperCaseWSpaces: return "ps"
+            case Regex.CAPSWSpaces: return "Cs"
+            case Regex.LowercaseWSpaces: return "ls"
+            case Regex.AlphabetsWSpaces: return "αs"
+        # fmt: on
 
 
 TOKEN_PATTERNS = {
-    # ProperCase: Uppercase followed by lowercase (e.g., "Word")
     Regex.ProperCase: re.compile(r"[A-Z][a-z]+"),
-    # CAPS: One or more uppercase letters
     Regex.CAPS: re.compile(r"[A-Z]+"),
-    # Lowercase: One or more lowercase letters
     Regex.Lowercase: re.compile(r"[a-z]+"),
-    # Digits: One or more digits
     Regex.Digits: re.compile(r"\d+"),
-    # Alphabets: One or more letters (upper or lower)
     Regex.Alphabets: re.compile(r"[A-Za-z]+"),
-    # Alphanumeric: One or more letters or numbers
     Regex.Alphanumeric: re.compile(r"[A-Za-z0-9]+"),
-    # Whitespace: One or more whitespace characters
     Regex.Whitespace: re.compile(r"\s+"),
-    # StartT: Start of string
     Regex.StartT: re.compile(r"^"),
-    # EndT: End of string
     Regex.EndT: re.compile(r"$"),
-    # ProperCaseWSpaces: ProperCase words with spaces between
     Regex.ProperCaseWSpaces: re.compile(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*"),
-    # CAPSWSpaces: CAPS words with spaces between
     Regex.CAPSWSpaces: re.compile(r"[A-Z]+(?:\s+[A-Z]+)*"),
-    # LowercaseWSpaces: lowercase words with spaces between
     Regex.LowercaseWSpaces: re.compile(r"[a-z]+(?:\s+[a-z]+)*"),
-    # AlphabetsWSpaces: Letter words with spaces between
     Regex.AlphabetsWSpaces: re.compile(r"[A-Za-z]+(?:\s+[A-Za-z]+)*"),
 }
 
@@ -151,15 +155,22 @@ def get_constant_str_pattern(s: str) -> re.Pattern:
     return _constant_str_patterns[s]
 
 
+_match_cache: dict[tuple[str, str], list[TokenMatch]] = dict()
+
+
 def find_matches(string: str, token: Regex | str) -> list[TokenMatch]:
-    matches = []
+    key = (string, str(token))
+    matches = _match_cache.get(key)
+    if matches is not None:
+        return matches
 
-    if isinstance(token, str):
-        pattern = get_constant_str_pattern(token)
-    else:
-        assert isinstance(token, Regex)
+    if isinstance(token, Regex):
         pattern = TOKEN_PATTERNS[token]
+    else:
+        assert type(token) == str
+        pattern = get_constant_str_pattern(token)
 
+    matches = []
     for k, match in enumerate(pattern.finditer(string), 1):
         matches.append(
             TokenMatch(
@@ -170,6 +181,7 @@ def find_matches(string: str, token: Regex | str) -> list[TokenMatch]:
             )
         )
 
+    _match_cache[key] = matches
     return matches
 
 
