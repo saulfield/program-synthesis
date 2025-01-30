@@ -1,26 +1,8 @@
 # %%
 from itertools import product
 from dsl import Regex, substr, find_matches
+from common import make_counter, str_to_id
 from pydantic.dataclasses import dataclass
-
-
-def make_counter():
-    i = 0
-
-    def f():
-        nonlocal i
-        r = i
-        i += 1
-        return r
-
-    return f
-
-
-gen_id = make_counter()
-
-
-def string2id(s: str) -> int:
-    return gen_id()
 
 
 @dataclass(frozen=True)
@@ -41,10 +23,6 @@ def get_match_ids(t: str | Regex, s: str, i: int, j: int) -> list[int]:
             ids.append(m.k)
             ids.append(m.k - len(matches) - 1)
     return ids
-
-
-def regex_tokens(cs: str) -> set[Regex]:
-    return set()
 
 
 @dataclass(frozen=True)
@@ -87,7 +65,7 @@ def gen_input_graph(s: str):
     E: set[Edge] = set()
     I: dict[Node, set[NodeLabel]] = dict()
     L: dict[Edge, set[Tok]] = dict()
-    str_id = string2id(s)
+    str_id = str_to_id(s)
 
     # Create nodes
     for node_id in range(0, len_s + 3):
@@ -155,30 +133,31 @@ def gen_data_input_graph(strings: list[str]) -> InputDataGraph:
     return G
 
 
-# Examples from 5.2
-# ----------------
+if __name__ == "__main__":
+    # Examples from 5.2
+    # ----------------
 
-# G1 = gen_input_graph("1 lb")
-# G2 = gen_input_graph("23 g")
-# G = intersect(G1, G2)
+    # G1 = gen_input_graph("1 lb")
+    # G2 = gen_input_graph("23 g")
+    # G = intersect(G1, G2)
 
-strings = ["1 lb", "23 g", "4 tons", "102 grams", "75 kg"]
-G = gen_data_input_graph(strings)
+    strings = ["1 lb", "23 g", "4 tons", "102 grams", "75 kg"]
+    G = gen_data_input_graph(strings)
 
-print("V:", G.V)
-print("E:", G.E)
-print("I:", G.I)
-print("L:", G.L)
-for edge, tokens in sorted(G.L.items(), key=lambda e: (e[0].n1.id, e[0].n2.id)):
-    print(f"L({edge}) = {tokens}")
+    print("V:", G.V)
+    print("E:", G.E)
+    print("I:", G.I)
+    print("L:", G.L)
+    for edge, tokens in sorted(G.L.items(), key=lambda e: (e[0].n1.id, e[0].n2.id)):
+        print(f"L({edge}) = {tokens}")
 
-# Prints something akin to the following:
-#
-# L(Edge(0, 1)) = {(∧, 1)},
-# L(Edge(1, 2)) = {(αn, -2), (d, 1), (αn, 1), (d, -1)},
-# L(Edge(2, 3)) = {(ws, 1), (" ", -1), (ws, -1), (" ", 1)},
-# L(Edge(3, 4)) = {(αs, -1), (αs, 1), (ls, -1), (α, -1), (αn, -1), (α, 1), (ls, 1), (αn, 2), (l, -1), (l, 1)},
-# L(Edge(4, 5)) = {($, 1)}
-#
-# NOTE: this output is identical to the paper, with the exception of the 'ws' tokens.
-# It's unclear why they didn't include it in their output, since this should be matched.
+    # Prints something akin to the following:
+    #
+    # L(Edge(0, 1)) = {(∧, 1)},
+    # L(Edge(1, 2)) = {(αn, -2), (d, 1), (αn, 1), (d, -1)},
+    # L(Edge(2, 3)) = {(ws, 1), (" ", -1), (ws, -1), (" ", 1)},
+    # L(Edge(3, 4)) = {(αs, -1), (αs, 1), (ls, -1), (α, -1), (αn, -1), (α, 1), (ls, 1), (αn, 2), (l, -1), (l, 1)},
+    # L(Edge(4, 5)) = {($, 1)}
+    #
+    # NOTE: this output is identical to the paper, with the exception of the 'ws' tokens.
+    # It's unclear why they didn't include it in their output, since this should be matched.
