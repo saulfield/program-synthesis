@@ -4,18 +4,23 @@ from dsl import Regex, substr, find_matches
 from pydantic.dataclasses import dataclass
 
 
-def gen_id():
-    i = 1
-    while True:
-        yield i
+def make_counter():
+    i = 0
+
+    def f():
+        nonlocal i
+        r = i
         i += 1
+        return r
+
+    return f
 
 
-id_gen = gen_id()
+gen_id = make_counter()
 
 
 def string2id(s: str) -> int:
-    return next(id_gen)
+    return gen_id()
 
 
 @dataclass(frozen=True)
@@ -44,11 +49,10 @@ def regex_tokens(cs: str) -> set[Regex]:
 
 @dataclass(frozen=True)
 class Node:
-    ids: tuple[int, ...]
+    id: int
 
     def __repr__(self):
-        args = ", ".join([str(id) for id in self.ids])
-        return f"Node({args})"
+        return f"Node({self.id})"
 
 
 @dataclass(frozen=True)
@@ -87,13 +91,13 @@ def gen_input_graph(s: str):
 
     # Create nodes
     for node_id in range(0, len_s + 3):
-        node = Node((node_id,))
+        node = Node(node_id)
         V.add(node)
         I[node] = {NodeLabel(str_id, node_id)}
 
     # Create special edge labels
-    edge_start = Edge(Node((0,)), Node((1,)))
-    edge_end = Edge(Node((len_s + 1,)), Node((len_s + 2,)))
+    edge_start = Edge(Node(0), Node(1))
+    edge_end = Edge(Node(len_s + 1), Node(len_s + 2))
     E.add(edge_start)
     E.add(edge_end)
     L[edge_start] = {Tok(Regex.StartT, 1)}
@@ -102,7 +106,7 @@ def gen_input_graph(s: str):
     # Create edges and labels
     for i in range(1, len(s) + 1):
         for j in range(i + 1, len(s) + 2):
-            edge = Edge(Node((i,)), Node((j,)))
+            edge = Edge(Node(i), Node(j))
             E.add(edge)
             cs = substr(s, i, j)
             L[edge] = {Tok(cs, m_id) for m_id in get_match_ids(cs, s, i, j)}
@@ -118,15 +122,19 @@ def intersect(G1: InputDataGraph, G2: InputDataGraph) -> InputDataGraph:
     I: dict[Node, set[NodeLabel]] = dict()
     L: dict[Edge, set[Tok]] = dict()
 
-    for e1, e2 in list(product(G1.E, G2.E)):
+    gen_id = make_counter()
+
+    g1_edges = sorted(list(G1.E), key=lambda e: (e.n1.id, e.n2.id))
+    g2_edges = sorted(list(G2.E), key=lambda e: (e.n1.id, e.n2.id))
+    for e1, e2 in product(g1_edges, g2_edges):
         merged_set = G1.L[e1] & G2.L[e2]
 
         # Only add nodes/edges if these edges have tokens in common
         if merged_set:
 
             # New nodes and labels
-            n1 = Node(e1.n1.ids + e2.n1.ids)
-            n2 = Node(e1.n2.ids + e2.n2.ids)
+            n1 = Node(gen_id())
+            n2 = Node(gen_id())
             V.add(n1)
             V.add(n2)
             I[n1] = G1.I[e1.n1] | G2.I[e2.n1]
@@ -161,7 +169,7 @@ print("V:", G.V)
 print("E:", G.E)
 print("I:", G.I)
 print("L:", G.L)
-for edge, tokens in sorted(G.L.items(), key=lambda e: e[0].n1.ids + e[0].n2.ids):
+for edge, tokens in sorted(G.L.items(), key=lambda e: (e[0].n1.id, e[0].n2.id)):
     print(f"L({edge}) = {tokens}")
 
 # Prints something akin to the following:
