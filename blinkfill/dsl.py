@@ -146,7 +146,8 @@ class Concat(Expr):
     exprs: tuple[SubstringExpr, ...]
 
     def __repr__(self):
-        return f"Concat{self.exprs}"
+        exprs = ", ".join([repr(e) for e in self.exprs])
+        return f"Concat({exprs})"
 
 
 # Eval
@@ -218,6 +219,6 @@ def eval_expr(expr: Expr, env: dict[int, str]) -> str:
             raise ValueError(f"Unsupported expression: {expr}")
 
 
-def eval_program(expr: Expr, input_strs: list[str]):
-    env: dict[int, str] = {i: s for i, s in enumerate(input_strs, 1)}
+def eval_program(expr: Expr, input_str: str):
+    env: dict[int, str] = {1: input_str}
     return eval_expr(expr, env)

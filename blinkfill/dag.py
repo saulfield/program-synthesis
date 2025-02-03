@@ -1,13 +1,14 @@
 # %%
+import heapq
 from itertools import product
 from typing import TypeAlias
 
 import dsl
 from common import str_to_id
 from dsl import substr
-from input_data_graph import InputDataGraph
+from input_data_graph import InputDataGraph, rank_nodes
 from input_data_graph import Node as GraphNode
-from input_data_graph import gen_data_input_graph
+from input_data_graph import gen_input_data_graph
 from pydantic.dataclasses import dataclass
 
 
@@ -82,7 +83,8 @@ def gen_substr_expr(s: str, lpos: int, rpos: int, G: InputDataGraph) -> SubStrDa
                     lexprs.add(v)
                 if label.index == rpos:
                     rexprs.add(v)
-    return SubStrDagExpr(str_id, frozenset(lexprs), frozenset(rexprs))
+    col = 1  # NOTE: column number here, not string ID
+    return SubStrDagExpr(col, frozenset(lexprs), frozenset(rexprs))
 
 
 def gen_dag(in_str: str, out_str: str, G: InputDataGraph) -> Dag:
@@ -237,32 +239,150 @@ def gen_dsl_exprs(G: InputDataGraph, dag_expr: SubStrDagExpr | ConstantStrDagExp
             return {dsl.SubStr(dsl.Var(i), lpos, rpos) for lpos, rpos in product(lpos_set, rpos_set)}
 
 
+def gen_program(G: InputDataGraph, dag_exprs: list[SubStrDagExpr | ConstantStrDagExpr]) -> dsl.Concat:
+    substr_exprs = [gen_dsl_exprs(G, dag_expr).pop() for dag_expr in dag_exprs]
+    return dsl.Concat(tuple(substr_exprs))
+
+
+def best_pos_expr(node_scores: dict[int, int], exprs: PosExprSet) -> ConstantPosDagExpr | GraphNode:
+    best_score = -1
+    best_expr = None
+    for expr in exprs:
+        match expr:
+            case ConstantPosDagExpr(_):
+                score = 0
+            case GraphNode(i):
+                score = node_scores[i]
+        if score > best_score:
+            best_score = score
+            best_expr = expr
+    assert best_expr is not None
+    return best_expr
+
+
+def pos_index(G: InputDataGraph, pos: ConstantPosDagExpr | GraphNode) -> int:
+    match pos:
+        case ConstantPosDagExpr(k):
+            return k
+        case GraphNode(_):
+            # NOTE: the paper is unclear on how to measure these lengths,
+            # so we just take the average across all the labels.
+            labels = G.I[pos]
+            return int(sum([label.index for label in labels]) / len(labels))
+
+
+def expr_score(G: InputDataGraph, node_scores: dict[int, int], expr: ConstantStrDagExpr | SubStrDagExpr):
+    match expr:
+        case ConstantStrDagExpr(s):
+            return 0.1 * len(s) ** 2
+        case SubStrDagExpr(i, lexprs, rexprs):
+            lexpr = best_pos_expr(node_scores, lexprs)
+            rexpr = best_pos_expr(node_scores, rexprs)
+            left = pos_index(G, lexpr)
+            right = pos_index(G, rexpr)
+            str_len = abs(right - left)
+            return 1.5 * str_len**2
+
+
+def best_path(dag: Dag, G: InputDataGraph, node_scores: dict[int, int]):
+    adj: dict[int, set[int]] = dict()
+    edge_scores: dict[tuple[int, int], tuple[float, ConstantStrDagExpr | SubStrDagExpr]] = dict()
+    for edge, exprs in dag.W.items():
+        v1 = edge.n1.id
+        v2 = edge.n2.id
+        results = [(expr_score(G, node_scores, expr), expr) for expr in exprs]
+        results = sorted(results, key=lambda x: x[0], reverse=True)
+        best_score, best_expr = results[0]
+
+        adj.setdefault(v1, set())
+        adj[v1].add(v2)
+        edge_scores[(v1, v2)] = (best_score, best_expr)
+
+    # Dijkstra’s Algorithm
+    start = dag.start_node.id
+    end = dag.final_node.id
+    queue = [(0, start)]
+    came_from = dict()
+    came_from[start] = None
+    cost_so_far = dict()
+    cost_so_far[start] = 0
+    v = None
+
+    while queue:
+        _, v = heapq.heappop(queue)
+        if v == end:
+            break
+        for va in adj[v]:
+            score, _ = edge_scores[(v, va)]
+            new_cost = cost_so_far[v] - score
+            if va not in cost_so_far or new_cost < cost_so_far[va]:
+                cost_so_far[va] = new_cost
+                came_from[va] = v
+                heapq.heappush(queue, (new_cost, va))
+
+    assert v == end, "No path found"
+    path = []
+    while v != start:
+        v_prev = came_from[v]
+        expr = edge_scores[(v_prev, v)][1]  # type: ignore
+        path.append(expr)
+        v = v_prev
+    path.reverse()
+    return path
+
+
 # Example
 inputs = [
     "Mumbai, India",
+    "Los Angeles, United States of America",
     "Newark, United States",
+    "New York, United States of America",
+    "Wellington, New Zealand",
+    "New Delhi, India",
 ]
 outputs = [
     "India",
-    "United States",
+    "United States of America",
 ]
 
-G = gen_data_input_graph(inputs)
+G = gen_input_data_graph(inputs)
 dag1 = gen_dag(inputs[0], outputs[0], G)
 dag2 = gen_dag(inputs[1], outputs[1], G)
 dag = intersect_dag(dag1, dag2)
+node_scores = rank_nodes(G)
+exprs = best_path(dag, G, node_scores)
+program = gen_program(G, exprs)
+result = dsl.eval_program(program, "Newark, United States")
 
-# for edge, exprs in dag.W.items():
+print(program)
+print(result)
+
+# %%
+# for edge, exprs in sorted(dag.W.items(), key=lambda e: (e[0].n1.id, e[0].n2.id)):
 #     exprs = sorted(list(exprs), key=lambda e: str(e))
-#     exprs = ", ".join([e.__repr__() for e in exprs])
+#     exprs = ", ".join([repr(e) for e in exprs])
 #     print(f"W({edge.n1.id}, {edge.n2.id}) = {{{exprs}}}")
 
-expr = edge_exprs(dag, 0, 18).pop()
-# print(G.L[GraphEdge(GraphNode(34), GraphNode(35))])
+# Find a path from start to end node in the DAG
+# print(dag.start_node, dag.final_node)
+exprs = [edge_exprs(dag, dag.start_node.id, dag.final_node.id).pop()]
+# exprs = [
+#     edge_exprs(dag, 0, 5).pop(),
+#     edge_exprs(dag, 5, 15).pop(),
+# ]
+program = gen_program(G, exprs)
+dsl.eval_program(program, "Newark, United States")
+print(program)
 
-dsl_exprs = gen_dsl_exprs(G, expr)
-for e in dsl_exprs:
-    print(e)
-print(len(dsl_exprs))
-program = dsl_exprs.pop()
-dsl.eval_program(program, ["Newark, United States"])
+# dsl_exprs = gen_dsl_exprs(G, expr)
+# for e in dsl_exprs:
+#     print(e)
+# print(len(dsl_exprs))
+# program = dsl_exprs.pop()
+
+# Test for soundness property (Theorem 1 in the paper)
+# for program in dsl_exprs:
+#     print(program)
+#     for in_str, out_str in zip(inputs, outputs):
+#         assert dsl.eval_program(program, in_str) == out_str
+# print("Soundness tests passed.")
