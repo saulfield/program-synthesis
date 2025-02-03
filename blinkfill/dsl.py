@@ -109,6 +109,11 @@ class MatchPos(PositionExpr):
     k: int
     dir: Dir
 
+    def __repr__(self):
+        tok = self.token
+        tok_str = repr(tok) if isinstance(tok, Regex) else f'"{tok}"'
+        return f"MatchPos({tok_str}, {self.k}, {self.dir})"
+
 
 @dataclass(frozen=True)
 class ConstantPos(PositionExpr):
@@ -146,31 +151,26 @@ class Concat(Expr):
 
 # Eval
 
-_constant_str_patterns = {}
-
-
-def get_constant_str_pattern(s: str) -> re.Pattern:
-    if s not in _constant_str_patterns:
-        _constant_str_patterns[s] = re.compile(re.escape(s))
-    return _constant_str_patterns[s]
-
-
+_constant_str_patterns: dict[str, re.Pattern[str]] = {}
 _match_cache: dict[tuple[str, str], list[TokenMatch]] = dict()
 
 
 def find_matches(string: str, token: Regex | str) -> list[TokenMatch]:
     key = (string, str(token))
-    matches = _match_cache.get(key)
-    if matches is not None:
-        return matches
+    result = _match_cache.get(key)
+    if result is not None:
+        return result
 
     if isinstance(token, Regex):
         pattern = TOKEN_PATTERNS[token]
     else:
         assert type(token) == str
-        pattern = get_constant_str_pattern(token)
+        pattern = _constant_str_patterns.get(token)
+        if pattern is None:
+            pattern = re.compile(re.escape(token))
+            _constant_str_patterns[token] = pattern
 
-    matches = []
+    matches: list[TokenMatch] = []
     for k, match in enumerate(pattern.finditer(string), 1):
         matches.append(
             TokenMatch(
@@ -185,56 +185,39 @@ def find_matches(string: str, token: Regex | str) -> list[TokenMatch]:
     return matches
 
 
-def token_match(string: str, token: Regex | str, k: int):
-    matches = find_matches(string, token)
-    i = k - 1 if k > 0 else len(matches) + k
-    return matches[i]
-
-
 def substr(string: str, start: int, end: int) -> str:
     return string[start - 1 : end - 1]
 
 
-pos_cache: dict[PositionExpr, int] = dict()
-expr_cache: dict[Expr, str] = dict()
-
-
 def eval_pos(s: str, expr: PositionExpr) -> int:
-    key = (s, expr)
-    val = pos_cache.get(key)
-    if val:
-        return val
     match expr:
         case ConstantPos(k):
-            val = k if k > 0 else len(s) + k
+            return k if k > 0 else len(s) + k
         case MatchPos(token, k, dir):
             matches = find_matches(s, token)
             i = k - 1 if k > 0 else len(matches) + k
             m = matches[i]
-            val = m.start if dir is Dir.Start else m.end
+            return m.start if dir is Dir.Start else m.end
         case _:
             raise ValueError(f"Unsupported expression: {expr}")
-    pos_cache[key] = val
-    return val
 
 
-def eval_expr(env: dict[int, str], expr: Expr) -> str:
-    env_hash = hash(tuple(sorted(env.items())))
-    key = (env_hash, expr)
-    val = expr_cache.get(key)
-    if val:
-        return val
+def eval_expr(expr: Expr, env: dict[int, str]) -> str:
     match expr:
         case Concat(exprs):
-            val = "".join([eval_expr(env, e) for e in exprs])
+            s = "".join([eval_expr(e, env) for e in exprs])
+            return s
         case ConstantStr(s):
-            val = s
+            return s
         case SubStr(Var(i), lexpr, rexpr):
             s = env[i]
             lpos = eval_pos(s, lexpr)
             rpos = eval_pos(s, rexpr)
-            val = substr(s, lpos, rpos)
+            return substr(s, lpos, rpos)
         case _:
             raise ValueError(f"Unsupported expression: {expr}")
-    expr_cache[key] = val
-    return val
+
+
+def eval_program(expr: Expr, input_strs: list[str]):
+    env: dict[int, str] = {i: s for i, s in enumerate(input_strs, 1)}
+    return eval_expr(expr, env)

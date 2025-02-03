@@ -17,7 +17,7 @@ class Tok:
 
 def get_match_ids(t: str | Regex, s: str, i: int, j: int) -> list[int]:
     matches = find_matches(s, t)
-    ids = []
+    ids: list[int] = []
     for m in matches:
         if m.start == i and m.end == j:
             ids.append(m.k)
@@ -127,10 +127,10 @@ def intersect(G1: InputDataGraph, G2: InputDataGraph) -> InputDataGraph:
 
 
 def gen_data_input_graph(strings: list[str]) -> InputDataGraph:
-    G = gen_input_graph(strings[0])
+    graph = gen_input_graph(strings[0])
     for s in strings[1:]:
-        G = intersect(G, gen_input_graph(s))
-    return G
+        graph = intersect(graph, gen_input_graph(s))
+    return graph
 
 
 if __name__ == "__main__":

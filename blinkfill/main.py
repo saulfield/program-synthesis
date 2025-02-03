@@ -21,14 +21,13 @@ def test_dsl():
         MatchPos(Regex.CAPS, -1, Dir.Start),
         MatchPos(Regex.Lowercase, -1, Dir.Start),
     )
-    expr = Concat([f1, ConstantStr("."), f2, ConstantStr(".")])
+    expr = Concat((f1, ConstantStr("."), f2, ConstantStr(".")))
 
     f1 = SubStr(Var(1), ConstantPos(1), ConstantPos(2))
     f2 = SubStr(Var(1), ConstantPos(15), ConstantPos(16))
-    expr = Concat([f1, ConstantStr("."), f2, ConstantStr(".")])
+    expr = Concat((f1, ConstantStr("."), f2, ConstantStr(".")))
 
-    env = {1: "Brandon Henry Saunders"}
-    eval_expr(env, expr)  # prints "B.S."
+    eval_program(expr, ["Brandon Henry Saunders"])  # prints "B.S."
 
 
 def test_synthesis():

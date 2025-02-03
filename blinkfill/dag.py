@@ -7,7 +7,6 @@ from common import str_to_id
 from dsl import substr
 from input_data_graph import InputDataGraph
 from input_data_graph import Node as GraphNode
-from input_data_graph import Edge as GraphEdge
 from input_data_graph import gen_data_input_graph
 from pydantic.dataclasses import dataclass
 
@@ -262,5 +261,8 @@ expr = edge_exprs(dag, 0, 18).pop()
 # print(G.L[GraphEdge(GraphNode(34), GraphNode(35))])
 
 dsl_exprs = gen_dsl_exprs(G, expr)
-env = {1: "Newark, United States"}
-dsl.eval_expr(env, dsl_exprs.pop())
+for e in dsl_exprs:
+    print(e)
+print(len(dsl_exprs))
+program = dsl_exprs.pop()
+dsl.eval_program(program, ["Newark, United States"])
