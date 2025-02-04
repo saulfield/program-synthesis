@@ -95,6 +95,42 @@ def synthesize(examples: list[tuple[str, str]]):
     return result
 
 
+def test_synthesis():
+    examples = [("Clark Kent", "C.K.")]
+
+    start = time.perf_counter()
+    program = synthesize(examples)
+    end = time.perf_counter()
+
+    if program:
+        print("Program found!")
+        print(program)
+    else:
+        print("No program found.")
+
+    print(f"Took: {end - start:0.2f}s")
+
+    # Without equivalence reduction:
+    # e 4477456
+    # f 46
+    # p 9
+    # s 1
+    # i 9
+    # Program found!
+    # Concat(SubStr(Var(1), ConstantPos(1), ConstantPos(2)), ConstantStr(.), SubStr(Var(1), ConstantPos(7), ConstantPos(8)), ConstantStr(.))
+    # Took: 62.63s
+
+    # With equivalence reduction:
+    # e 1591313
+    # f 38
+    # p 9
+    # s 1
+    # i 9
+    # Program found!
+    # Concat(SubStr(Var(1), ConstantPos(1), ConstantPos(2)), ConstantStr(.), SubStr(Var(1), ConstantPos(7), ConstantPos(8)), ConstantStr(.))
+    # Took: 46.80s
+
+
 # Test
 examples = [("Clark Kent", "C.K.")]
 

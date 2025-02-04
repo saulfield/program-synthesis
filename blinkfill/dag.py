@@ -87,7 +87,7 @@ def gen_substr_expr(s: str, lpos: int, rpos: int, G: InputDataGraph) -> SubStrDa
     return SubStrDagExpr(col, frozenset(lexprs), frozenset(rexprs))
 
 
-def gen_dag(in_str: str, out_str: str, G: InputDataGraph) -> Dag:
+def gen_dag_single(G: InputDataGraph, in_str: str, out_str: str) -> Dag:
     nodes: set[DagNode] = set()
     edges: set[DagEdge] = set()
     W: dict[DagEdge, SubStrExprSet] = dict()
@@ -116,6 +116,13 @@ def gen_dag(in_str: str, out_str: str, G: InputDataGraph) -> Dag:
                         W[edge].add(ss_expr)
 
     return Dag(nodes, start_node, final_node, edges, W)
+
+
+def gen_dag(G: InputDataGraph, inputs: list[str], outputs: list[str]) -> Dag:
+    dag = gen_dag_single(G, inputs[0], outputs[0])
+    for i in range(1, len(outputs)):
+        dag = intersect_dag(dag, gen_dag_single(G, inputs[i], outputs[i]))
+    return dag
 
 
 def intersect_pos_expr_sets(pos_set1: PosExprSet, pos_set2: PosExprSet) -> PosExprSet:
@@ -284,9 +291,10 @@ def expr_score(G: InputDataGraph, node_scores: dict[int, int], expr: ConstantStr
             return 1.5 * str_len**2
 
 
-def best_path(dag: Dag, G: InputDataGraph, node_scores: dict[int, int]):
+def best_path(G: InputDataGraph, dag: Dag):
     adj: dict[int, set[int]] = dict()
     edge_scores: dict[tuple[int, int], tuple[float, ConstantStrDagExpr | SubStrDagExpr]] = dict()
+    node_scores = rank_nodes(G)
     for edge, exprs in dag.W.items():
         v1 = edge.n1.id
         v2 = edge.n2.id
@@ -329,60 +337,3 @@ def best_path(dag: Dag, G: InputDataGraph, node_scores: dict[int, int]):
         v = v_prev
     path.reverse()
     return path
-
-
-# Example
-inputs = [
-    "Mumbai, India",
-    "Los Angeles, United States of America",
-    "Newark, United States",
-    "New York, United States of America",
-    "Wellington, New Zealand",
-    "New Delhi, India",
-]
-outputs = [
-    "India",
-    "United States of America",
-]
-
-G = gen_input_data_graph(inputs)
-dag1 = gen_dag(inputs[0], outputs[0], G)
-dag2 = gen_dag(inputs[1], outputs[1], G)
-dag = intersect_dag(dag1, dag2)
-node_scores = rank_nodes(G)
-exprs = best_path(dag, G, node_scores)
-program = gen_program(G, exprs)
-result = dsl.eval_program(program, "Newark, United States")
-
-print(program)
-print(result)
-
-# %%
-# for edge, exprs in sorted(dag.W.items(), key=lambda e: (e[0].n1.id, e[0].n2.id)):
-#     exprs = sorted(list(exprs), key=lambda e: str(e))
-#     exprs = ", ".join([repr(e) for e in exprs])
-#     print(f"W({edge.n1.id}, {edge.n2.id}) = {{{exprs}}}")
-
-# Find a path from start to end node in the DAG
-# print(dag.start_node, dag.final_node)
-exprs = [edge_exprs(dag, dag.start_node.id, dag.final_node.id).pop()]
-# exprs = [
-#     edge_exprs(dag, 0, 5).pop(),
-#     edge_exprs(dag, 5, 15).pop(),
-# ]
-program = gen_program(G, exprs)
-dsl.eval_program(program, "Newark, United States")
-print(program)
-
-# dsl_exprs = gen_dsl_exprs(G, expr)
-# for e in dsl_exprs:
-#     print(e)
-# print(len(dsl_exprs))
-# program = dsl_exprs.pop()
-
-# Test for soundness property (Theorem 1 in the paper)
-# for program in dsl_exprs:
-#     print(program)
-#     for in_str, out_str in zip(inputs, outputs):
-#         assert dsl.eval_program(program, in_str) == out_str
-# print("Soundness tests passed.")

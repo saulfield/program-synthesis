@@ -222,3 +222,29 @@ def eval_expr(expr: Expr, env: dict[int, str]) -> str:
 def eval_program(expr: Expr, input_str: str):
     env: dict[int, str] = {1: input_str}
     return eval_expr(expr, env)
+
+
+def test_dsl():
+    # Example from 6.1
+    # ----------------
+    # e2 ≡ Concat(f1, ConstantStr(”.”), f2, ConstantStr(”.”))
+    # f1 ≡ SubStr(v1, (C, 1, Start), (C, 1, End))
+    # f2 ≡ SubStr(v1, (C, −1, Start), (l, −1, Start))
+
+    f1 = SubStr(
+        Var(1),
+        MatchPos(Regex.CAPS, 1, Dir.Start),
+        MatchPos(Regex.CAPS, 1, Dir.End),
+    )
+    f2 = SubStr(
+        Var(1),
+        MatchPos(Regex.CAPS, -1, Dir.Start),
+        MatchPos(Regex.Lowercase, -1, Dir.Start),
+    )
+    expr = Concat((f1, ConstantStr("."), f2, ConstantStr(".")))
+
+    f1 = SubStr(Var(1), ConstantPos(1), ConstantPos(2))
+    f2 = SubStr(Var(1), ConstantPos(15), ConstantPos(16))
+    expr = Concat((f1, ConstantStr("."), f2, ConstantStr(".")))
+
+    eval_program(expr, "Brandon Henry Saunders")  # prints "B.S."
