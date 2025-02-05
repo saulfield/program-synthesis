@@ -15,4 +15,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.coverage.run]
-omit = ["src/synthesis/blinkfill/main.py"]
+omit = ["synthesis/blinkfill/main.py"]
