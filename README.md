@@ -1,5 +1,13 @@
 # Program Synthesis Experiments
 
+## Run
+
+Using [uv](https://docs.astral.sh/uv):
+
+```sh
+uv run blinkfill
+```
+
 ## References
 
 ### Course Notes

@@ -3,7 +3,7 @@ import time
 from itertools import product
 from typing import Any
 
-from dsl import *
+from blinkfill.dsl import *
 
 GRAMMAR = {
     "e": [["Concat", "f", "f", "f", "f"]],

@@ -3,13 +3,14 @@ import heapq
 from itertools import product
 from typing import TypeAlias
 
-import dsl
-from common import str_to_id
-from dsl import substr
-from input_data_graph import InputDataGraph, rank_nodes
-from input_data_graph import Node as GraphNode
-from input_data_graph import gen_input_data_graph
 from pydantic.dataclasses import dataclass
+
+from blinkfill import dsl
+from blinkfill.common import str_to_id
+from blinkfill.dsl import substr
+from blinkfill.input_data_graph import InputDataGraph
+from blinkfill.input_data_graph import Node as GraphNode
+from blinkfill.input_data_graph import rank_nodes
 
 
 @dataclass(frozen=True)

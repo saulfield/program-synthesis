@@ -3,7 +3,7 @@ import time
 from blinkfill import learn, run
 
 
-if __name__ == "__main__":
+def main():
     # Example
     inputs = [
         "Mumbai, India",
@@ -30,3 +30,7 @@ if __name__ == "__main__":
     print(f'Output: "{result}"')
     print(f"Learn took: {learn_elapsed:0.2f}s")
     print(f"Run took: {run_elapsed:0.2f}s")
+
+
+if __name__ == "__main__":
+    main()
