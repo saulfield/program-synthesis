@@ -1,9 +1,12 @@
 # %%
+# Attempt to find a simple BlinkFill DSL program using bottom-up enumerative search.
+
+# type: ignore
 import time
 from itertools import product
 from typing import Any
 
-from blinkfill.dsl import *
+from synthesis.blinkfill.dsl import *
 
 GRAMMAR = {
     "e": [["Concat", "f", "f", "f", "f"]],

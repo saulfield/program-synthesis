@@ -5,7 +5,8 @@
 Using [uv](https://docs.astral.sh/uv):
 
 ```sh
-uv run blinkfill
+uv run blinkfill # Run BlinkFill example
+uv run pytest -v # Run tests
 ```
 
 ## References

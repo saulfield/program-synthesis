@@ -1,6 +1,6 @@
 # %%
 import time
-from blinkfill import learn, run
+from synthesis.blinkfill import learn, run
 
 
 def main():

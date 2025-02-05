@@ -5,12 +5,12 @@ from typing import TypeAlias
 
 from pydantic.dataclasses import dataclass
 
-from blinkfill import dsl
-from blinkfill.common import str_to_id
-from blinkfill.dsl import substr
-from blinkfill.input_data_graph import InputDataGraph
-from blinkfill.input_data_graph import Node as GraphNode
-from blinkfill.input_data_graph import rank_nodes
+from synthesis.blinkfill import dsl
+from synthesis.blinkfill.common import str_to_id
+from synthesis.blinkfill.dsl import substr
+from synthesis.blinkfill.input_data_graph import InputDataGraph
+from synthesis.blinkfill.input_data_graph import Node as GraphNode
+from synthesis.blinkfill.input_data_graph import rank_nodes
 
 
 @dataclass(frozen=True)

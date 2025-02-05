@@ -1,8 +1,8 @@
 # %%
 from itertools import product
 
-from blinkfill.common import str_to_id
-from blinkfill.dsl import Regex, find_matches, substr
+from synthesis.blinkfill.common import str_to_id
+from synthesis.blinkfill.dsl import Regex, find_matches, substr
 from pydantic.dataclasses import dataclass
 
 

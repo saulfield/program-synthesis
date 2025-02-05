@@ -1,6 +1,6 @@
-from blinkfill.dag import best_path, gen_dag, gen_program
-from blinkfill.dsl import Concat, eval_program
-from blinkfill.input_data_graph import gen_input_data_graph
+from synthesis.blinkfill.dag import best_path, gen_dag, gen_program
+from synthesis.blinkfill.dsl import Concat, eval_program
+from synthesis.blinkfill.input_data_graph import gen_input_data_graph
 from pydantic.dataclasses import dataclass
 
 
