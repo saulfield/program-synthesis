@@ -7,6 +7,7 @@ Using [uv](https://docs.astral.sh/uv):
 ```sh
 uv run blinkfill # Run BlinkFill example
 uv run pytest -v # Run tests
+uv run pytest -v --cov=synthesis.blinkfill --cov-report term --cov-report html && rm .coverage # Run tests with coverage
 ```
 
 ## References

@@ -24,22 +24,33 @@ class Regex(Enum):
     AlphabetsWSpaces = auto()
 
     def __repr__(self):
-        # fmt: off
         match self:
-            case Regex.ProperCase: return "p"
-            case Regex.CAPS: return "C"
-            case Regex.Lowercase: return "l"
-            case Regex.Digits: return "d"
-            case Regex.Alphabets: return "α"
-            case Regex.Alphanumeric: return "αn"
-            case Regex.Whitespace: return "ws"
-            case Regex.StartT: return "∧"
-            case Regex.EndT: return "$"
-            case Regex.ProperCaseWSpaces: return "ps"
-            case Regex.CAPSWSpaces: return "Cs"
-            case Regex.LowercaseWSpaces: return "ls"
-            case Regex.AlphabetsWSpaces: return "αs"
-        # fmt: on
+            case Regex.ProperCase:
+                return "p"
+            case Regex.CAPS:
+                return "C"
+            case Regex.Lowercase:
+                return "l"
+            case Regex.Digits:
+                return "d"
+            case Regex.Alphabets:
+                return "α"
+            case Regex.Alphanumeric:
+                return "αn"
+            case Regex.Whitespace:
+                return "ws"
+            case Regex.StartT:
+                return "∧"
+            case Regex.EndT:
+                return "$"
+            case Regex.ProperCaseWSpaces:
+                return "ps"
+            case Regex.CAPSWSpaces:
+                return "Cs"
+            case Regex.LowercaseWSpaces:
+                return "ls"
+            case Regex.AlphabetsWSpaces:
+                return "αs"
 
 
 TOKEN_PATTERNS = {
@@ -99,7 +110,7 @@ class SubstringExpr(Expr):
 class Var(Expr):
     i: PositiveInt
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"Var({self.i})"
 
 
@@ -109,7 +120,7 @@ class MatchPos(PositionExpr):
     k: int
     dir: Dir
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         tok = self.token
         tok_str = repr(tok) if isinstance(tok, Regex) else f'"{tok}"'
         return f"MatchPos({tok_str}, {self.k}, {self.dir})"
@@ -119,7 +130,7 @@ class MatchPos(PositionExpr):
 class ConstantPos(PositionExpr):
     k: int
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"ConstantPos({self.k})"
 
 
@@ -127,7 +138,7 @@ class ConstantPos(PositionExpr):
 class ConstantStr(SubstringExpr):
     s: str
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"ConstantStr({self.s})"
 
 
@@ -137,7 +148,7 @@ class SubStr(SubstringExpr):
     lexpr: PositionExpr
     rexpr: PositionExpr
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"SubStr({self.var}, {self.lexpr}, {self.rexpr})"
 
 
@@ -145,7 +156,7 @@ class SubStr(SubstringExpr):
 class Concat(Expr):
     exprs: tuple[SubstringExpr, ...]
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         exprs = ", ".join([repr(e) for e in self.exprs])
         return f"Concat({exprs})"
 
@@ -165,7 +176,7 @@ def find_matches(string: str, token: Regex | str) -> list[TokenMatch]:
     if isinstance(token, Regex):
         pattern = TOKEN_PATTERNS[token]
     else:
-        assert type(token) == str
+        assert isinstance(token, str)
         pattern = _constant_str_patterns.get(token)
         if pattern is None:
             pattern = re.compile(re.escape(token))
@@ -222,29 +233,3 @@ def eval_expr(expr: Expr, env: dict[int, str]) -> str:
 def eval_program(expr: Expr, input_str: str):
     env: dict[int, str] = {1: input_str}
     return eval_expr(expr, env)
-
-
-def test_dsl():
-    # Example from 6.1
-    # ----------------
-    # e2 ≡ Concat(f1, ConstantStr(”.”), f2, ConstantStr(”.”))
-    # f1 ≡ SubStr(v1, (C, 1, Start), (C, 1, End))
-    # f2 ≡ SubStr(v1, (C, −1, Start), (l, −1, Start))
-
-    f1 = SubStr(
-        Var(1),
-        MatchPos(Regex.CAPS, 1, Dir.Start),
-        MatchPos(Regex.CAPS, 1, Dir.End),
-    )
-    f2 = SubStr(
-        Var(1),
-        MatchPos(Regex.CAPS, -1, Dir.Start),
-        MatchPos(Regex.Lowercase, -1, Dir.Start),
-    )
-    expr = Concat((f1, ConstantStr("."), f2, ConstantStr(".")))
-
-    f1 = SubStr(Var(1), ConstantPos(1), ConstantPos(2))
-    f2 = SubStr(Var(1), ConstantPos(15), ConstantPos(16))
-    expr = Concat((f1, ConstantStr("."), f2, ConstantStr(".")))
-
-    eval_program(expr, "Brandon Henry Saunders")  # prints "B.S."

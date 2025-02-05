@@ -1,4 +1,3 @@
-# %%
 import heapq
 from itertools import product
 from typing import TypeAlias
@@ -8,16 +7,15 @@ from pydantic.dataclasses import dataclass
 from synthesis.blinkfill import dsl
 from synthesis.blinkfill.common import str_to_id
 from synthesis.blinkfill.dsl import substr
-from synthesis.blinkfill.input_data_graph import InputDataGraph
+from synthesis.blinkfill.input_data_graph import InputDataGraph, rank_nodes
 from synthesis.blinkfill.input_data_graph import Node as GraphNode
-from synthesis.blinkfill.input_data_graph import rank_nodes
 
 
 @dataclass(frozen=True)
 class ConstantPosDagExpr:
     k: int
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"ConstantPos({self.k})"
 
 
@@ -25,7 +23,7 @@ class ConstantPosDagExpr:
 class ConstantStrDagExpr:
     s: str
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f'ConstantStr("{self.s}")'
 
 
@@ -38,7 +36,7 @@ class SubStrDagExpr:
     lexprs: PosExprSet
     rexprs: PosExprSet
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         ls = ", ".join(sorted([str(e) for e in self.lexprs]))
         rs = ", ".join(sorted([str(e) for e in self.rexprs]))
         return f"SubStr(v{self.i}, {{{ls}}}, {{{rs}}})"
@@ -51,7 +49,7 @@ SubStrExprSet: TypeAlias = set[SubStrDagExpr | ConstantStrDagExpr]
 class DagNode:
     id: int
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"Node({self.id})"
 
 
@@ -60,7 +58,7 @@ class DagEdge:
     n1: DagNode
     n2: DagNode
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"Edge({self.n1.id}, {self.n2.id})"
 
 
@@ -109,11 +107,11 @@ def gen_dag_single(G: InputDataGraph, in_str: str, out_str: str) -> Dag:
             out_ss = substr(out_str, i + 1, j + 1)
             W[edge] = {ConstantStrDagExpr(out_ss)}
 
-            for l in range(1, len(in_str) + 1):
-                for r in range(l + 1, len(in_str) + 2):
-                    in_ss = substr(in_str, l, r)
+            for left in range(1, len(in_str) + 1):
+                for right in range(left + 1, len(in_str) + 2):
+                    in_ss = substr(in_str, left, right)
                     if in_ss == out_ss:
-                        ss_expr = gen_substr_expr(in_str, l, r, G)
+                        ss_expr = gen_substr_expr(in_str, left, right, G)
                         W[edge].add(ss_expr)
 
     return Dag(nodes, start_node, final_node, edges, W)
@@ -206,15 +204,6 @@ def intersect_dag(dag1: Dag, dag2: Dag) -> Dag:
     return Dag(nodes, start_node, final_node, edges, W)
 
 
-def edges_from(dag: Dag, i: int):
-    return [(e.n1.id, e.n2.id) for e in dag.edges if e.n1.id == i]
-
-
-def edge_exprs(dag: Dag, i: int, j: int):
-    edge = DagEdge(DagNode(i), DagNode(j))
-    return dag.W[edge]
-
-
 def gen_dsl_pos_exprs(G: InputDataGraph, pos_expr: ConstantPosDagExpr | GraphNode) -> set[dsl.PositionExpr]:
     match pos_expr:
         case ConstantPosDagExpr(k):
@@ -283,7 +272,7 @@ def expr_score(G: InputDataGraph, node_scores: dict[int, int], expr: ConstantStr
     match expr:
         case ConstantStrDagExpr(s):
             return 0.1 * len(s) ** 2
-        case SubStrDagExpr(i, lexprs, rexprs):
+        case SubStrDagExpr(_, lexprs, rexprs):
             lexpr = best_pos_expr(node_scores, lexprs)
             rexpr = best_pos_expr(node_scores, rexprs)
             left = pos_index(G, lexpr)

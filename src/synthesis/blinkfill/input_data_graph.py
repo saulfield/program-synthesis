@@ -1,9 +1,9 @@
-# %%
 from itertools import product
+
+from pydantic.dataclasses import dataclass
 
 from synthesis.blinkfill.common import str_to_id
 from synthesis.blinkfill.dsl import Regex, find_matches, substr
-from pydantic.dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -11,7 +11,7 @@ class Tok:
     t: Regex | str
     k: int
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         t_str = self.t.__repr__() if isinstance(self.t, Regex) else f'"{self.t}"'
         return f"({t_str}, {self.k})"
 
@@ -30,7 +30,7 @@ def get_match_ids(t: str | Regex, s: str, i: int, j: int) -> list[int]:
 class Node:
     id: int
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"Node({self.id})"
 
 
@@ -39,7 +39,7 @@ class Edge:
     n1: Node
     n2: Node
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"Edge({self.n1}, {self.n2})"
 
 
@@ -48,7 +48,7 @@ class NodeLabel:
     str_id: int  # ID corresponding to the input string
     index: int  # index (position) in the string
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return f"NodeLabel({self.str_id}, {self.index})"
 
 
@@ -56,7 +56,7 @@ class NodeLabel:
 class InputDataGraph:
     V: set[Node]
     E: set[Edge]
-    I: dict[Node, set[NodeLabel]]
+    I: dict[Node, set[NodeLabel]]  # noqa: E741
     L: dict[Edge, set[Tok]]
 
 
@@ -64,10 +64,9 @@ def gen_input_graph(s: str):
     len_s = len(s)
     V: set[Node] = set()
     E: set[Edge] = set()
-    I: dict[Node, set[NodeLabel]] = dict()
+    I: dict[Node, set[NodeLabel]] = dict()  # noqa: E741
     L: dict[Edge, set[Tok]] = dict()
     str_id = str_to_id(s)
-    # str_id = 1
 
     # Create nodes
     for node_id in range(0, len_s + 3):
@@ -115,7 +114,7 @@ def intersect(G1: InputDataGraph, G2: InputDataGraph) -> InputDataGraph:
 
     V: set[Node] = set()
     E: set[Edge] = set()
-    I: dict[Node, set[NodeLabel]] = dict()
+    I: dict[Node, set[NodeLabel]] = dict()  # noqa: E741
     L: dict[Edge, set[Tok]] = dict()
 
     node_id = node_rewriter()
@@ -215,39 +214,3 @@ def rank_nodes(G: InputDataGraph) -> dict[int, int]:
 
     result: dict[int, int] = {v: in_scores[v] + out_scores[v] for v in nodes}
     return result
-
-
-if __name__ == "__main__":
-    # Examples from 5.2
-    # ----------------
-
-    # G1 = gen_input_graph("1 lb")
-    # G2 = gen_input_graph("23 g")
-    # G = intersect(G1, G2)
-
-    strings = [
-        "1 lb",
-        "23 g",
-        "4 tons",
-        "102 grams",
-        "75 kg",
-    ]
-    G = gen_input_data_graph(strings)
-
-    print("V:", G.V)
-    print("E:", G.E)
-    print("I:", G.I)
-    print("L:", G.L)
-    for edge, tokens in sorted(G.L.items(), key=lambda e: (e[0].n1.id, e[0].n2.id)):
-        print(f"L({edge}) = {tokens}")
-
-    # Prints something akin to the following:
-    #
-    # L(Edge(0, 1)) = {(∧, 1)},
-    # L(Edge(1, 2)) = {(αn, -2), (d, 1), (αn, 1), (d, -1)},
-    # L(Edge(2, 3)) = {(ws, 1), (" ", -1), (ws, -1), (" ", 1)},
-    # L(Edge(3, 4)) = {(αs, -1), (αs, 1), (ls, -1), (α, -1), (αn, -1), (α, 1), (ls, 1), (αn, 2), (l, -1), (l, 1)},
-    # L(Edge(4, 5)) = {($, 1)}
-    #
-    # NOTE: this output is identical to the paper, with the exception of the 'ws' tokens.
-    # It's unclear why they didn't include it in their output, since this should be matched.
