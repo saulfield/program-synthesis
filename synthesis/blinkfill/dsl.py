@@ -5,8 +5,6 @@ from enum import Enum, auto
 from pydantic import PositiveInt
 from pydantic.dataclasses import dataclass
 
-# Tokens
-
 
 class Regex(Enum):
     ProperCase = auto()

@@ -8,7 +8,7 @@ requires-python = ">=3.13"
 dependencies = ["pydantic>=2.10.6", "pytest>=8.3.4", "pytest-cov>=6.0.0"]
 
 [project.scripts]
-blinkfill = "synthesis.blinkfill.main:main"
+blinkfill = "synthesis.examples.main:blinkfill_example"
 
 [build-system]
 requires = ["hatchling"]

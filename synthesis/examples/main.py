@@ -3,8 +3,7 @@ import time
 from synthesis.blinkfill import learn, run
 
 
-def main():
-    # Example
+def blinkfill_example():
     inputs = [
         "Mumbai, India",
         "Los Angeles, United States of America",
@@ -33,4 +32,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    blinkfill_example()
