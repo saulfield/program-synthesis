@@ -195,24 +195,25 @@ def pos_index(idg: InputDataGraph, pos: PosExpr) -> int:
             return int(sum([label.index for label in labels]) / len(labels))
 
 
-def expr_score(idg: InputDataGraph, node_scores: dict[int, int], expr: SubStrExpr):
+def expr_score(idg: InputDataGraph, node_scores: dict[int, int], expr: SubStrExpr) -> tuple[float, SubStrExpr]:
     match expr:
         case ConstantStrDagExpr(s):
-            return 0.1 * len(s) ** 2
-        case SubStrDagExpr(_, lexprs, rexprs):
+            return (0.1 * len(s) ** 2, expr)
+        case SubStrDagExpr(i, lexprs, rexprs):
             lexpr = best_pos_expr(node_scores, lexprs)
             rexpr = best_pos_expr(node_scores, rexprs)
             left = pos_index(idg, lexpr)
             right = pos_index(idg, rexpr)
             str_len = abs(right - left)
-            return 1.5 * str_len**2
+            new_expr = SubStrDagExpr(i, frozenset({lexpr}), frozenset({rexpr}))
+            return (1.5 * str_len**2, new_expr)
 
 
 def best_path(idg: InputDataGraph, dag: Dag) -> list[SubStrExpr]:
     edge_scores: dict[tuple[int, int], tuple[float, SubStrExpr]] = dict()
     node_scores = rank_nodes(idg)
     for edge, exprs in dag.edge_data.items():
-        results = [(expr_score(idg, node_scores, expr), expr) for expr in exprs]
+        results = [expr_score(idg, node_scores, expr) for expr in exprs]
         results = sorted(results, key=lambda x: x[0], reverse=True)
         best_score, best_expr = results[0]
         edge_scores[edge] = (best_score, best_expr)
@@ -274,12 +275,9 @@ def gen_dsl_exprs(idg: InputDataGraph, dag_expr: SubStrExpr) -> set[dsl.Substrin
         case ConstantStrDagExpr(s):
             return {dsl.ConstantStr(s)}
         case SubStrDagExpr(i, lexprs, rexprs):
-            lpos_set: set[dsl.PositionExpr] = set()
-            rpos_set: set[dsl.PositionExpr] = set()
-            for lexpr in lexprs:
-                lpos_set.update(gen_dsl_pos_exprs(idg, lexpr))
-            for rexpr in rexprs:
-                rpos_set.update(gen_dsl_pos_exprs(idg, rexpr))
+            assert len(lexprs) == 1 and len(rexprs) == 1, "Pos exprs should have 1 value at this point"
+            lpos_set = gen_dsl_pos_exprs(idg, list(lexprs).pop())
+            rpos_set = gen_dsl_pos_exprs(idg, list(rexprs).pop())
             return {dsl.SubStr(dsl.Var(i), lpos, rpos) for lpos, rpos in product(lpos_set, rpos_set)}
 
 
