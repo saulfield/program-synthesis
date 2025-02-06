@@ -10,10 +10,10 @@ class Program:
 
 
 def learn(inputs: list[str], outputs: list[str]) -> Program:
-    G = gen_input_data_graph(inputs)
-    dag = gen_dag(G, inputs, outputs)
-    exprs = best_path(G, dag)
-    program = gen_program(G, exprs)
+    idg = gen_input_data_graph(inputs)
+    dag = gen_dag(idg, inputs, outputs)
+    exprs = best_path(idg, dag)
+    program = gen_program(idg, exprs)
     return Program(program)
 
 

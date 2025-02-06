@@ -12,7 +12,7 @@ from synthesis.blinkfill.dsl import (
     Var,
     eval_program,
 )
-from synthesis.blinkfill.input_data_graph import Edge, InputDataGraph, Node, Tok, gen_input_data_graph
+from synthesis.blinkfill.input_data_graph import InputDataGraph, Tok, gen_input_data_graph
 
 
 # Example from 6.1
@@ -43,9 +43,9 @@ def test_dsl():
 # Example from 5.2
 def test_input_data_graph():
     strings = ["1 lb", "23 g", "4 tons", "102 grams", "75 kg"]
-    g = gen_input_data_graph(strings)
+    idg = gen_input_data_graph(strings)
 
-    # Prints something akin to the following:
+    # Generates something akin to the following:
     # L(Edge(0, 1)) = {(∧, 1)},
     # L(Edge(1, 2)) = {(αn, -2), (d, 1), (αn, 1), (d, -1)},
     # L(Edge(2, 3)) = {(ws, 1), (" ", -1), (ws, -1), (" ", 1)},
@@ -53,21 +53,19 @@ def test_input_data_graph():
     # L(Edge(4, 5)) = {($, 1)}
     # NOTE: this output is identical to the paper, with the exception of the 'ws' tokens.
     # It's unclear why they didn't include it in their output, since this should be matched.
-    for edge, tokens in sorted(g.L.items(), key=lambda e: (e[0].n1.id, e[0].n2.id)):
-        print(f"L({edge}) = {tokens}")
 
-    def edge_at(g: InputDataGraph, i, j):
-        return g.L[Edge(Node(i), Node(j))]
+    def edge_at(idg: InputDataGraph, i, j):
+        return idg.edge_data[(i, j)]
 
-    assert edge_at(g, 0, 1) == {Tok(Regex.StartT, 1)}
-    assert edge_at(g, 1, 2) == {
+    assert edge_at(idg, 0, 1) == {Tok(Regex.StartT, 1)}
+    assert edge_at(idg, 1, 2) == {
         Tok(Regex.Alphanumeric, -2),
         Tok(Regex.Digits, 1),
         Tok(Regex.Alphanumeric, 1),
         Tok(Regex.Digits, -1),
     }
-    assert edge_at(g, 2, 3) == {Tok(Regex.Whitespace, 1), Tok(" ", -1), Tok(Regex.Whitespace, -1), Tok(" ", 1)}
-    assert edge_at(g, 3, 4) == {
+    assert edge_at(idg, 2, 3) == {Tok(Regex.Whitespace, 1), Tok(" ", -1), Tok(Regex.Whitespace, -1), Tok(" ", 1)}
+    assert edge_at(idg, 3, 4) == {
         Tok(Regex.AlphabetsWSpaces, -1),
         Tok(Regex.AlphabetsWSpaces, 1),
         Tok(Regex.LowercaseWSpaces, -1),
@@ -79,7 +77,7 @@ def test_input_data_graph():
         Tok(Regex.Lowercase, -1),
         Tok(Regex.Lowercase, 1),
     }
-    assert edge_at(g, 4, 5) == {Tok(Regex.EndT, 1)}
+    assert edge_at(idg, 4, 5) == {Tok(Regex.EndT, 1)}
 
 
 table1 = [

@@ -5,10 +5,9 @@ from typing import TypeAlias
 from pydantic.dataclasses import dataclass
 
 from synthesis.blinkfill import dsl
-from synthesis.blinkfill.common import str_to_id
+from synthesis.blinkfill.common import Graph, make_node_rewriter, str_to_id
 from synthesis.blinkfill.dsl import substr
 from synthesis.blinkfill.input_data_graph import InputDataGraph, rank_nodes
-from synthesis.blinkfill.input_data_graph import Node as GraphNode
 
 
 @dataclass(frozen=True)
@@ -27,7 +26,7 @@ class ConstantStrDagExpr:
         return f'ConstantStr("{self.s}")'
 
 
-PosExprSet: TypeAlias = frozenset[ConstantPosDagExpr | GraphNode]
+PosExprSet: TypeAlias = frozenset[ConstantPosDagExpr | int]
 
 
 @dataclass(frozen=True)
@@ -46,37 +45,19 @@ SubStrExprSet: TypeAlias = set[SubStrDagExpr | ConstantStrDagExpr]
 
 
 @dataclass(frozen=True)
-class DagNode:
-    id: int
-
-    def __repr__(self):  # pragma: no cover
-        return f"Node({self.id})"
-
-
-@dataclass(frozen=True)
-class DagEdge:
-    n1: DagNode
-    n2: DagNode
-
-    def __repr__(self):  # pragma: no cover
-        return f"Edge({self.n1.id}, {self.n2.id})"
-
-
-@dataclass(frozen=True)
 class Dag:
-    nodes: set[DagNode]
-    start_node: DagNode
-    final_node: DagNode
-    edges: set[DagEdge]
-    W: dict[DagEdge, SubStrExprSet]
+    g: Graph
+    start_node: int
+    final_node: int
+    edge_data: dict[tuple[int, int], SubStrExprSet]
 
 
-def gen_substr_expr(s: str, lpos: int, rpos: int, G: InputDataGraph) -> SubStrDagExpr:
+def gen_substr_expr(s: str, lpos: int, rpos: int, idg: InputDataGraph) -> SubStrDagExpr:
     str_id = str_to_id(s)
-    lexprs: set[ConstantPosDagExpr | GraphNode] = {ConstantPosDagExpr(lpos)}
-    rexprs: set[ConstantPosDagExpr | GraphNode] = {ConstantPosDagExpr(rpos)}
-    for v in G.V:
-        for label in G.I[v]:
+    lexprs: set[ConstantPosDagExpr | int] = {ConstantPosDagExpr(lpos)}
+    rexprs: set[ConstantPosDagExpr | int] = {ConstantPosDagExpr(rpos)}
+    for v in idg.g.nodes:
+        for label in idg.node_data[v]:
             if label.str_id == str_id:
                 if label.index == lpos:
                     lexprs.add(v)
@@ -86,54 +67,45 @@ def gen_substr_expr(s: str, lpos: int, rpos: int, G: InputDataGraph) -> SubStrDa
     return SubStrDagExpr(col, frozenset(lexprs), frozenset(rexprs))
 
 
-def gen_dag_single(G: InputDataGraph, in_str: str, out_str: str) -> Dag:
-    nodes: set[DagNode] = set()
-    edges: set[DagEdge] = set()
-    W: dict[DagEdge, SubStrExprSet] = dict()
+def gen_dag_single(idg: InputDataGraph, in_str: str, out_str: str) -> Dag:
+    g = Graph()
+    edge_data: dict[tuple[int, int], SubStrExprSet] = dict()
 
     # Add nodes
-    start_node = DagNode(0)
-    final_node = DagNode(len(out_str))
-    nodes.add(start_node)
-    nodes.add(final_node)
+    start_node = 0
+    final_node = len(out_str)
+    g.add_node(start_node)
+    g.add_node(final_node)
     for i in range(1, len(out_str) + 1):
-        nodes.add(DagNode(i))
+        g.add_node(i)
 
     # Iterate over substrings
     for i in range(0, len(out_str)):
         for j in range(i + 1, len(out_str) + 1):
-            edge = DagEdge(DagNode(i), DagNode(j))
-            edges.add(edge)
+            edge = (i, j)
+            g.add_edge(edge)
             out_ss = substr(out_str, i + 1, j + 1)
-            W[edge] = {ConstantStrDagExpr(out_ss)}
+            edge_data[edge] = {ConstantStrDagExpr(out_ss)}
 
             for left in range(1, len(in_str) + 1):
                 for right in range(left + 1, len(in_str) + 2):
                     in_ss = substr(in_str, left, right)
                     if in_ss == out_ss:
-                        ss_expr = gen_substr_expr(in_str, left, right, G)
-                        W[edge].add(ss_expr)
-
-    return Dag(nodes, start_node, final_node, edges, W)
-
-
-def gen_dag(G: InputDataGraph, inputs: list[str], outputs: list[str]) -> Dag:
-    dag = gen_dag_single(G, inputs[0], outputs[0])
-    for i in range(1, len(outputs)):
-        dag = intersect_dag(dag, gen_dag_single(G, inputs[i], outputs[i]))
-    return dag
+                        ss_expr = gen_substr_expr(in_str, left, right, idg)
+                        edge_data[edge].add(ss_expr)
+    return Dag(g, start_node, final_node, edge_data)
 
 
 def intersect_pos_expr_sets(pos_set1: PosExprSet, pos_set2: PosExprSet) -> PosExprSet:
-    merged_pos_exprs: set[ConstantPosDagExpr | GraphNode] = set()
+    merged_pos_exprs: set[ConstantPosDagExpr | int] = set()
     for p1, p2 in product(pos_set1, pos_set2):
         match p1, p2:
             case ConstantPosDagExpr(k1), ConstantPosDagExpr(k2):
                 if k1 == k2:
                     merged_pos_exprs.add(ConstantPosDagExpr(k1))
-            case GraphNode(id1), GraphNode(id2):
+            case id1, id2 if isinstance(id1, int) and isinstance(id2, int):
                 if id1 == id2:
-                    merged_pos_exprs.add(GraphNode(id1))
+                    merged_pos_exprs.add(id1)
             case _:
                 pass
     return frozenset(merged_pos_exprs)
@@ -158,71 +130,62 @@ def intersect_expr_sets(expr_set1: SubStrExprSet, expr_set2: SubStrExprSet) -> S
 
 
 def intersect_dag(dag1: Dag, dag2: Dag) -> Dag:
-    def node_rewriter():
-        i = 0
-        cache: dict[tuple[DagNode, DagNode], int] = dict()
+    g = Graph()
+    edge_data: dict[tuple[int, int], SubStrExprSet] = dict()
+    node_id = make_node_rewriter()
 
-        def get_id(n1: DagNode, n2: DagNode) -> int:
-            nonlocal i, cache
-            key = (n1, n2)
-            id = cache.get(key)
-            if id is None:
-                id = i
-                i += 1
-                cache[key] = id
-            return id
-
-        return get_id
-
-    nodes: set[DagNode] = set()
-    edges: set[DagEdge] = set()
-    W: dict[DagEdge, SubStrExprSet] = dict()
-    node_id = node_rewriter()
-
-    # Edges and middle nodes
-    dag1_edges = sorted(list(dag1.edges), key=lambda e: (e.n1.id, e.n2.id))
-    dag2_edges = sorted(list(dag2.edges), key=lambda e: (e.n1.id, e.n2.id))
-    for edge1, edge2 in product(dag1_edges, dag2_edges):
-        merged_exprs = intersect_expr_sets(dag1.W[edge1], dag2.W[edge2])
-
+    dag1_edges = sorted(list(dag1.g.edges))
+    dag2_edges = sorted(list(dag2.g.edges))
+    for e1, e2 in product(dag1_edges, dag2_edges):
         # Only add nodes/edges if these edges have tokens in common
+        merged_exprs = intersect_expr_sets(dag1.edge_data[e1], dag2.edge_data[e2])
         if merged_exprs:
             # New nodes and labels
-            n1 = DagNode(node_id(edge1.n1, edge2.n1))
-            n2 = DagNode(node_id(edge1.n2, edge2.n2))
-            nodes.add(n1)
-            nodes.add(n2)
+            src1, dst1 = e1
+            src2, dst2 = e2
+            src = node_id(src1, src2)
+            dst = node_id(dst1, dst2)
+            g.add_node(src)
+            g.add_node(dst)
 
             # New edge and label
-            edge = DagEdge(n1, n2)
-            edges.add(edge)
-            W[edge] = merged_exprs
-
+            edge = (src, dst)
+            g.add_edge(edge)
+            edge_data[edge] = merged_exprs
     # Start/end nodes
-    start_node = DagNode(node_id(dag1.start_node, dag2.start_node))
-    final_node = DagNode(node_id(dag1.final_node, dag2.final_node))
-    return Dag(nodes, start_node, final_node, edges, W)
+    start_node = node_id(dag1.start_node, dag2.start_node)
+    final_node = node_id(dag1.final_node, dag2.final_node)
+    return Dag(g, start_node, final_node, edge_data)
 
 
-def gen_dsl_pos_exprs(G: InputDataGraph, pos_expr: ConstantPosDagExpr | GraphNode) -> set[dsl.PositionExpr]:
+def gen_dag(idg: InputDataGraph, inputs: list[str], outputs: list[str]) -> Dag:
+    dag = gen_dag_single(idg, inputs[0], outputs[0])
+    for i in range(1, len(outputs)):
+        dag = intersect_dag(dag, gen_dag_single(idg, inputs[i], outputs[i]))
+    return dag
+
+
+def gen_dsl_pos_exprs(idg: InputDataGraph, pos_expr: ConstantPosDagExpr | int) -> set[dsl.PositionExpr]:
     match pos_expr:
         case ConstantPosDagExpr(k):
             return {dsl.ConstantPos(k)}
-        case GraphNode(id):
+        case id if isinstance(id, int):
             result: set[dsl.PositionExpr] = set()
-            for edge, tokens in G.L.items():
+            for (src, dst), tokens in idg.edge_data.items():
                 dir = None
-                if edge.n1.id == id:
+                if src == id:
                     dir = dsl.Dir.Start
-                elif edge.n2.id == id:
+                elif dst == id:
                     dir = dsl.Dir.End
                 if dir is not None:
                     match_pos_set = {dsl.MatchPos(tok.t, tok.k, dir) for tok in tokens}
                     result.update(match_pos_set)
             return result
+        case expr:
+            raise ValueError("Unexpected type for pos_expr", expr)
 
 
-def gen_dsl_exprs(G: InputDataGraph, dag_expr: SubStrDagExpr | ConstantStrDagExpr) -> set[dsl.SubstringExpr]:
+def gen_dsl_exprs(idg: InputDataGraph, dag_expr: SubStrDagExpr | ConstantStrDagExpr) -> set[dsl.SubstringExpr]:
     match dag_expr:
         case ConstantStrDagExpr(s):
             return {dsl.ConstantStr(s)}
@@ -230,25 +193,26 @@ def gen_dsl_exprs(G: InputDataGraph, dag_expr: SubStrDagExpr | ConstantStrDagExp
             lpos_set: set[dsl.PositionExpr] = set()
             rpos_set: set[dsl.PositionExpr] = set()
             for lexpr in lexprs:
-                lpos_set.update(gen_dsl_pos_exprs(G, lexpr))
+                lpos_set.update(gen_dsl_pos_exprs(idg, lexpr))
             for rexpr in rexprs:
-                rpos_set.update(gen_dsl_pos_exprs(G, rexpr))
+                rpos_set.update(gen_dsl_pos_exprs(idg, rexpr))
             return {dsl.SubStr(dsl.Var(i), lpos, rpos) for lpos, rpos in product(lpos_set, rpos_set)}
 
 
-def gen_program(G: InputDataGraph, dag_exprs: list[SubStrDagExpr | ConstantStrDagExpr]) -> dsl.Concat:
-    substr_exprs = [gen_dsl_exprs(G, dag_expr).pop() for dag_expr in dag_exprs]
+def gen_program(idg: InputDataGraph, dag_exprs: list[SubStrDagExpr | ConstantStrDagExpr]) -> dsl.Concat:
+    substr_exprs = [gen_dsl_exprs(idg, dag_expr).pop() for dag_expr in dag_exprs]
     return dsl.Concat(tuple(substr_exprs))
 
 
-def best_pos_expr(node_scores: dict[int, int], exprs: PosExprSet) -> ConstantPosDagExpr | GraphNode:
+def best_pos_expr(node_scores: dict[int, int], exprs: PosExprSet) -> ConstantPosDagExpr | int:
     best_score = -1
     best_expr = None
     for expr in exprs:
         match expr:
             case ConstantPosDagExpr(_):
                 score = 0
-            case GraphNode(i):
+            case i:
+                assert isinstance(i, int)
                 score = node_scores[i]
         if score > best_score:
             best_score = score
@@ -257,48 +221,42 @@ def best_pos_expr(node_scores: dict[int, int], exprs: PosExprSet) -> ConstantPos
     return best_expr
 
 
-def pos_index(G: InputDataGraph, pos: ConstantPosDagExpr | GraphNode) -> int:
+def pos_index(idg: InputDataGraph, pos: ConstantPosDagExpr | int) -> int:
     match pos:
         case ConstantPosDagExpr(k):
             return k
-        case GraphNode(_):
+        case _:
             # NOTE: the paper is unclear on how to measure these lengths,
             # so we just take the average across all the labels.
-            labels = G.I[pos]
+            labels = idg.node_data[pos]
             return int(sum([label.index for label in labels]) / len(labels))
 
 
-def expr_score(G: InputDataGraph, node_scores: dict[int, int], expr: ConstantStrDagExpr | SubStrDagExpr):
+def expr_score(idg: InputDataGraph, node_scores: dict[int, int], expr: ConstantStrDagExpr | SubStrDagExpr):
     match expr:
         case ConstantStrDagExpr(s):
             return 0.1 * len(s) ** 2
         case SubStrDagExpr(_, lexprs, rexprs):
             lexpr = best_pos_expr(node_scores, lexprs)
             rexpr = best_pos_expr(node_scores, rexprs)
-            left = pos_index(G, lexpr)
-            right = pos_index(G, rexpr)
+            left = pos_index(idg, lexpr)
+            right = pos_index(idg, rexpr)
             str_len = abs(right - left)
             return 1.5 * str_len**2
 
 
-def best_path(G: InputDataGraph, dag: Dag):
-    adj: dict[int, set[int]] = dict()
+def best_path(idg: InputDataGraph, dag: Dag):
     edge_scores: dict[tuple[int, int], tuple[float, ConstantStrDagExpr | SubStrDagExpr]] = dict()
-    node_scores = rank_nodes(G)
-    for edge, exprs in dag.W.items():
-        v1 = edge.n1.id
-        v2 = edge.n2.id
-        results = [(expr_score(G, node_scores, expr), expr) for expr in exprs]
+    node_scores = rank_nodes(idg)
+    for edge, exprs in dag.edge_data.items():
+        results = [(expr_score(idg, node_scores, expr), expr) for expr in exprs]
         results = sorted(results, key=lambda x: x[0], reverse=True)
         best_score, best_expr = results[0]
-
-        adj.setdefault(v1, set())
-        adj[v1].add(v2)
-        edge_scores[(v1, v2)] = (best_score, best_expr)
+        edge_scores[edge] = (best_score, best_expr)
 
     # Dijkstra’s Algorithm
-    start = dag.start_node.id
-    end = dag.final_node.id
+    start = dag.start_node
+    end = dag.final_node
     queue = [(0, start)]
     came_from = dict()
     came_from[start] = None
@@ -310,13 +268,13 @@ def best_path(G: InputDataGraph, dag: Dag):
         _, v = heapq.heappop(queue)
         if v == end:
             break
-        for va in adj[v]:
-            score, _ = edge_scores[(v, va)]
+        for v_out in dag.g.outgoing[v]:
+            score, _ = edge_scores[(v, v_out)]
             new_cost = cost_so_far[v] - score
-            if va not in cost_so_far or new_cost < cost_so_far[va]:
-                cost_so_far[va] = new_cost
-                came_from[va] = v
-                heapq.heappush(queue, (new_cost, va))
+            if v_out not in cost_so_far or new_cost < cost_so_far[v_out]:
+                cost_so_far[v_out] = new_cost
+                came_from[v_out] = v
+                heapq.heappush(queue, (new_cost, v_out))
 
     assert v == end, "No path found"
     path = []

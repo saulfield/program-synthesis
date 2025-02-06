@@ -23,7 +23,7 @@ class Regex(Enum):
     LowercaseWSpaces = auto()
     AlphabetsWSpaces = auto()
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         match self:
             case Regex.ProperCase:
                 return "p"
