@@ -12,7 +12,7 @@ from synthesis.blinkfill.dsl import (
     Var,
     eval_program,
 )
-from synthesis.blinkfill.input_data_graph import InputDataGraph, Tok, gen_input_data_graph
+from synthesis.blinkfill.input_data_graph import InputDataGraph, Tok, gen_idg
 
 
 # Example from 6.1
@@ -43,7 +43,7 @@ def test_dsl():
 # Example from 5.2
 def test_input_data_graph():
     strings = ["1 lb", "23 g", "4 tons", "102 grams", "75 kg"]
-    idg = gen_input_data_graph(strings)
+    idg = gen_idg(strings)
 
     # Generates something akin to the following:
     # L(Edge(0, 1)) = {(∧, 1)},

@@ -26,7 +26,8 @@ class ConstantStrDagExpr:
         return f'ConstantStr("{self.s}")'
 
 
-PosExprSet: TypeAlias = frozenset[ConstantPosDagExpr | int]
+PosExpr: TypeAlias = ConstantPosDagExpr | int
+PosExprSet: TypeAlias = frozenset[PosExpr]
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,8 @@ class SubStrDagExpr:
         return f"SubStr(v{self.i}, {{{ls}}}, {{{rs}}})"
 
 
-SubStrExprSet: TypeAlias = set[SubStrDagExpr | ConstantStrDagExpr]
+SubStrExpr: TypeAlias = SubStrDagExpr | ConstantStrDagExpr
+SubStrExprSet: TypeAlias = frozenset[SubStrExpr]
 
 
 @dataclass(frozen=True)
@@ -54,8 +56,8 @@ class Dag:
 
 def gen_substr_expr(s: str, lpos: int, rpos: int, idg: InputDataGraph) -> SubStrDagExpr:
     str_id = str_to_id(s)
-    lexprs: set[ConstantPosDagExpr | int] = {ConstantPosDagExpr(lpos)}
-    rexprs: set[ConstantPosDagExpr | int] = {ConstantPosDagExpr(rpos)}
+    lexprs: set[PosExpr] = {ConstantPosDagExpr(lpos)}
+    rexprs: set[PosExpr] = {ConstantPosDagExpr(rpos)}
     for v in idg.g.nodes:
         for label in idg.node_data[v]:
             if label.str_id == str_id:
@@ -85,19 +87,19 @@ def gen_dag_single(idg: InputDataGraph, in_str: str, out_str: str) -> Dag:
             edge = (i, j)
             g.add_edge(edge)
             out_ss = substr(out_str, i + 1, j + 1)
-            edge_data[edge] = {ConstantStrDagExpr(out_ss)}
+            edge_data[edge] = frozenset({ConstantStrDagExpr(out_ss)})
 
             for left in range(1, len(in_str) + 1):
                 for right in range(left + 1, len(in_str) + 2):
                     in_ss = substr(in_str, left, right)
                     if in_ss == out_ss:
                         ss_expr = gen_substr_expr(in_str, left, right, idg)
-                        edge_data[edge].add(ss_expr)
+                        edge_data[edge] |= {ss_expr}
     return Dag(g, start_node, final_node, edge_data)
 
 
 def intersect_pos_expr_sets(pos_set1: PosExprSet, pos_set2: PosExprSet) -> PosExprSet:
-    merged_pos_exprs: set[ConstantPosDagExpr | int] = set()
+    merged_pos_exprs: set[PosExpr] = set()
     for p1, p2 in product(pos_set1, pos_set2):
         match p1, p2:
             case ConstantPosDagExpr(k1), ConstantPosDagExpr(k2):
@@ -112,7 +114,7 @@ def intersect_pos_expr_sets(pos_set1: PosExprSet, pos_set2: PosExprSet) -> PosEx
 
 
 def intersect_expr_sets(expr_set1: SubStrExprSet, expr_set2: SubStrExprSet) -> SubStrExprSet:
-    merged_exprs: SubStrExprSet = set()
+    merged_exprs: set[SubStrExpr] = set()
     for expr1, expr2 in product(expr_set1, expr_set2):
         match expr1, expr2:
             case ConstantStrDagExpr(s1), ConstantStrDagExpr(s2):
@@ -126,7 +128,7 @@ def intersect_expr_sets(expr_set1: SubStrExprSet, expr_set2: SubStrExprSet) -> S
                         merged_exprs.add(SubStrDagExpr(v1, lpos_exprs, rpos_exprs))
             case _:
                 pass
-    return merged_exprs
+    return frozenset(merged_exprs)
 
 
 def intersect_dag(dag1: Dag, dag2: Dag) -> Dag:
@@ -165,7 +167,89 @@ def gen_dag(idg: InputDataGraph, inputs: list[str], outputs: list[str]) -> Dag:
     return dag
 
 
-def gen_dsl_pos_exprs(idg: InputDataGraph, pos_expr: ConstantPosDagExpr | int) -> set[dsl.PositionExpr]:
+def best_pos_expr(node_scores: dict[int, int], exprs: PosExprSet) -> PosExpr:
+    best_score = -1
+    best_expr = None
+    for expr in exprs:
+        match expr:
+            case ConstantPosDagExpr(_):
+                score = 0
+            case i:
+                assert isinstance(i, int)
+                score = node_scores[i]
+        if score > best_score:
+            best_score = score
+            best_expr = expr
+    assert best_expr is not None
+    return best_expr
+
+
+def pos_index(idg: InputDataGraph, pos: PosExpr) -> int:
+    match pos:
+        case ConstantPosDagExpr(k):
+            return k
+        case _:
+            # NOTE: the paper is unclear on how to measure these lengths,
+            # so we just take the average across all the labels.
+            labels = idg.node_data[pos]
+            return int(sum([label.index for label in labels]) / len(labels))
+
+
+def expr_score(idg: InputDataGraph, node_scores: dict[int, int], expr: SubStrExpr):
+    match expr:
+        case ConstantStrDagExpr(s):
+            return 0.1 * len(s) ** 2
+        case SubStrDagExpr(_, lexprs, rexprs):
+            lexpr = best_pos_expr(node_scores, lexprs)
+            rexpr = best_pos_expr(node_scores, rexprs)
+            left = pos_index(idg, lexpr)
+            right = pos_index(idg, rexpr)
+            str_len = abs(right - left)
+            return 1.5 * str_len**2
+
+
+def best_path(idg: InputDataGraph, dag: Dag) -> list[SubStrExpr]:
+    edge_scores: dict[tuple[int, int], tuple[float, SubStrExpr]] = dict()
+    node_scores = rank_nodes(idg)
+    for edge, exprs in dag.edge_data.items():
+        results = [(expr_score(idg, node_scores, expr), expr) for expr in exprs]
+        results = sorted(results, key=lambda x: x[0], reverse=True)
+        best_score, best_expr = results[0]
+        edge_scores[edge] = (best_score, best_expr)
+
+    # Dijkstra’s Algorithm
+    start = dag.start_node
+    end = dag.final_node
+    queue = [(0, start)]
+    came_from: dict[int, int] = dict()
+    cost_so_far = dict()
+    cost_so_far[start] = 0
+    v = start
+
+    while queue:
+        _, v = heapq.heappop(queue)
+        if v == end:
+            break
+        for v_out in dag.g.outgoing[v]:
+            score, _ = edge_scores[(v, v_out)]
+            new_cost = cost_so_far[v] - score
+            if v_out not in cost_so_far or new_cost < cost_so_far[v_out]:
+                cost_so_far[v_out] = new_cost
+                came_from[v_out] = v
+                heapq.heappush(queue, (new_cost, v_out))
+
+    assert v == end, "No path found"
+    path: list[SubStrExpr] = []
+    while v != start:
+        v_prev = came_from[v]
+        expr = edge_scores[(v_prev, v)][1]
+        path.append(expr)
+        v = v_prev
+    path.reverse()
+    return path
+
+
+def gen_dsl_pos_exprs(idg: InputDataGraph, pos_expr: PosExpr) -> set[dsl.PositionExpr]:
     match pos_expr:
         case ConstantPosDagExpr(k):
             return {dsl.ConstantPos(k)}
@@ -185,7 +269,7 @@ def gen_dsl_pos_exprs(idg: InputDataGraph, pos_expr: ConstantPosDagExpr | int) -
             raise ValueError("Unexpected type for pos_expr", expr)
 
 
-def gen_dsl_exprs(idg: InputDataGraph, dag_expr: SubStrDagExpr | ConstantStrDagExpr) -> set[dsl.SubstringExpr]:
+def gen_dsl_exprs(idg: InputDataGraph, dag_expr: SubStrExpr) -> set[dsl.SubstringExpr]:
     match dag_expr:
         case ConstantStrDagExpr(s):
             return {dsl.ConstantStr(s)}
@@ -199,89 +283,6 @@ def gen_dsl_exprs(idg: InputDataGraph, dag_expr: SubStrDagExpr | ConstantStrDagE
             return {dsl.SubStr(dsl.Var(i), lpos, rpos) for lpos, rpos in product(lpos_set, rpos_set)}
 
 
-def gen_program(idg: InputDataGraph, dag_exprs: list[SubStrDagExpr | ConstantStrDagExpr]) -> dsl.Concat:
+def gen_program(idg: InputDataGraph, dag_exprs: list[SubStrExpr]) -> dsl.Concat:
     substr_exprs = [gen_dsl_exprs(idg, dag_expr).pop() for dag_expr in dag_exprs]
     return dsl.Concat(tuple(substr_exprs))
-
-
-def best_pos_expr(node_scores: dict[int, int], exprs: PosExprSet) -> ConstantPosDagExpr | int:
-    best_score = -1
-    best_expr = None
-    for expr in exprs:
-        match expr:
-            case ConstantPosDagExpr(_):
-                score = 0
-            case i:
-                assert isinstance(i, int)
-                score = node_scores[i]
-        if score > best_score:
-            best_score = score
-            best_expr = expr
-    assert best_expr is not None
-    return best_expr
-
-
-def pos_index(idg: InputDataGraph, pos: ConstantPosDagExpr | int) -> int:
-    match pos:
-        case ConstantPosDagExpr(k):
-            return k
-        case _:
-            # NOTE: the paper is unclear on how to measure these lengths,
-            # so we just take the average across all the labels.
-            labels = idg.node_data[pos]
-            return int(sum([label.index for label in labels]) / len(labels))
-
-
-def expr_score(idg: InputDataGraph, node_scores: dict[int, int], expr: ConstantStrDagExpr | SubStrDagExpr):
-    match expr:
-        case ConstantStrDagExpr(s):
-            return 0.1 * len(s) ** 2
-        case SubStrDagExpr(_, lexprs, rexprs):
-            lexpr = best_pos_expr(node_scores, lexprs)
-            rexpr = best_pos_expr(node_scores, rexprs)
-            left = pos_index(idg, lexpr)
-            right = pos_index(idg, rexpr)
-            str_len = abs(right - left)
-            return 1.5 * str_len**2
-
-
-def best_path(idg: InputDataGraph, dag: Dag):
-    edge_scores: dict[tuple[int, int], tuple[float, ConstantStrDagExpr | SubStrDagExpr]] = dict()
-    node_scores = rank_nodes(idg)
-    for edge, exprs in dag.edge_data.items():
-        results = [(expr_score(idg, node_scores, expr), expr) for expr in exprs]
-        results = sorted(results, key=lambda x: x[0], reverse=True)
-        best_score, best_expr = results[0]
-        edge_scores[edge] = (best_score, best_expr)
-
-    # Dijkstra’s Algorithm
-    start = dag.start_node
-    end = dag.final_node
-    queue = [(0, start)]
-    came_from = dict()
-    came_from[start] = None
-    cost_so_far = dict()
-    cost_so_far[start] = 0
-    v = None
-
-    while queue:
-        _, v = heapq.heappop(queue)
-        if v == end:
-            break
-        for v_out in dag.g.outgoing[v]:
-            score, _ = edge_scores[(v, v_out)]
-            new_cost = cost_so_far[v] - score
-            if v_out not in cost_so_far or new_cost < cost_so_far[v_out]:
-                cost_so_far[v_out] = new_cost
-                came_from[v_out] = v
-                heapq.heappush(queue, (new_cost, v_out))
-
-    assert v == end, "No path found"
-    path = []
-    while v != start:
-        v_prev = came_from[v]
-        expr = edge_scores[(v_prev, v)][1]  # type: ignore
-        path.append(expr)
-        v = v_prev
-    path.reverse()
-    return path

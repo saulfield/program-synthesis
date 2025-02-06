@@ -25,7 +25,7 @@ class Label:
         return f"Label({self.str_id}, {self.index})"
 
 
-@dataclass
+@dataclass(frozen=True)
 class InputDataGraph:
     g: Graph
     node_data: dict[int, set[Label]]
@@ -42,7 +42,7 @@ def get_match_ids(t: str | Regex, s: str, i: int, j: int) -> list[int]:
     return ids
 
 
-def gen_input_data_graph_single(s: str) -> InputDataGraph:
+def gen_idg_single(s: str) -> InputDataGraph:
     len_s = len(s)
     str_id = str_to_id(s)
     g = Graph()
@@ -103,10 +103,10 @@ def intersect(g1: InputDataGraph, g2: InputDataGraph) -> InputDataGraph:
     return InputDataGraph(g, node_data, edge_data)
 
 
-def gen_input_data_graph(strings: list[str]) -> InputDataGraph:
-    graph = gen_input_data_graph_single(strings[0])
+def gen_idg(strings: list[str]) -> InputDataGraph:
+    graph = gen_idg_single(strings[0])
     for s in strings[1:]:
-        graph = intersect(graph, gen_input_data_graph_single(s))
+        graph = intersect(graph, gen_idg_single(s))
     return graph
 
 

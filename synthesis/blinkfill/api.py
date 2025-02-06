@@ -1,6 +1,6 @@
 from synthesis.blinkfill.dag import best_path, gen_dag, gen_program
 from synthesis.blinkfill.dsl import Concat, eval_program
-from synthesis.blinkfill.input_data_graph import gen_input_data_graph
+from synthesis.blinkfill.input_data_graph import gen_idg
 from pydantic.dataclasses import dataclass
 
 
@@ -10,7 +10,7 @@ class Program:
 
 
 def learn(inputs: list[str], outputs: list[str]) -> Program:
-    idg = gen_input_data_graph(inputs)
+    idg = gen_idg(inputs)
     dag = gen_dag(idg, inputs, outputs)
     exprs = best_path(idg, dag)
     program = gen_program(idg, exprs)
