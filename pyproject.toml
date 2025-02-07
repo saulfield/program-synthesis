@@ -5,7 +5,14 @@ description = ""
 readme = "README.md"
 authors = [{ name = "Saul Field" }]
 requires-python = ">=3.13"
-dependencies = ["pydantic>=2.10.6", "pytest>=8.3.4", "pytest-cov>=6.0.0"]
+dependencies = [
+    "graphviz>=0.20.3",
+    "ipykernel>=6.29.5",
+    "ipython>=8.32.0",
+    "pydantic>=2.10.6",
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+]
 
 [project.scripts]
 blinkfill = "synthesis.examples.main:blinkfill_example"
