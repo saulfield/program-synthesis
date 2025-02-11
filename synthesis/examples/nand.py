@@ -1,7 +1,12 @@
 # %%
-from itertools import product
 import time
+from itertools import product
+from pathlib import Path
+
+import graphviz
 from pydantic.dataclasses import dataclass
+
+from synthesis.blinkfill.visualize import graphviz_render
 
 
 @dataclass(frozen=True)
@@ -36,10 +41,20 @@ class Nand(Node):
         return super().__eq__(value)
 
     def __hash__(self) -> int:
-        return super().__hash__()
+        return hash(self.a) + hash(self.b)
 
     def __repr__(self) -> str:
         return f"Nand({self.a}, {self.b})"
+
+
+def hash_test():
+    a = Nand(Input(0), Input(1))
+    b = Nand(Input(0), Input(1))
+    c = Nand(Input(1), Input(0))
+    d = Nand(Input(0), Input(0))
+    assert hash(a) == hash(b)
+    assert hash(b) == hash(c)
+    assert hash(c) != hash(d)
 
 
 @dataclass(frozen=True)
@@ -58,16 +73,73 @@ class Program(Node):
         return f"Program({','.join([repr(o) for o in self.outputs])})"
 
 
+def draw_circuit(program: Program, name: str) -> graphviz.Digraph:
+    dot = graphviz.Digraph(name=name)
+    dot.attr(rankdir="LR")
+
+    edges: set[tuple[str, str]] = set()
+
+    def visit(node: Node) -> str:
+        match node:
+            case Input(i):
+                with dot.subgraph(name="cluster_input") as s:  # type: ignore
+                    s.attr(rank="same")
+                    node_id = str(i)
+                    s.node(node_id, label=chr(ord("a") + i), shape="plain")
+                    return node_id
+            case Nand(a, b):
+                node_id = str(hash(node))
+                dot.node(node_id, label=r"{{<left>|<right>}| NAND}", shape="record")
+                e1 = (visit(a), f"{node_id}:left")
+                e2 = (visit(b), f"{node_id}:right")
+                if e1 not in edges:
+                    edges.add(e1)
+                    dot.edge(*e1)
+                if e2 not in edges:
+                    edges.add(e2)
+                    dot.edge(*e2)
+                return node_id
+            case _:
+                raise ValueError("Unexpected node type.")
+
+    for output in program.outputs:
+        node_id = str(hash(output))
+        dot.node(node_id, label="out", shape="circle")
+        dot.edge(visit(output.n), node_id)
+    return dot
+
+
+def count_gates(program: Program) -> int:
+    gates = set()
+
+    def visit(node: Node):
+        match node:
+            case Nand(a, b):
+                gates.add(Nand(a, b))
+                visit(a)
+                visit(b)
+            case Output(node):
+                return visit(node)
+            case Program(outputs):
+                for output in outputs:
+                    visit(output)
+            case _:
+                pass
+
+    visit(program)
+    return len(gates)
+
+
 LEVELS = [
     Spec(
-        "Inverter",
+        "NOT",
         [
             ([0], [1]),
             ([1], [0]),
         ],
     ),
     Spec(
-        "And",
+        "AND",
         [
             ([0, 0], [0]),
             ([0, 1], [0]),
@@ -76,7 +148,7 @@ LEVELS = [
         ],
     ),
     Spec(
-        "Or",
+        "OR",
         [
             ([0, 0], [0]),
             ([0, 1], [1]),
@@ -85,7 +157,7 @@ LEVELS = [
         ],
     ),
     Spec(
-        "Xor",
+        "XOR",
         [
             ([0, 0], [0]),
             ([0, 1], [1]),
@@ -144,32 +216,59 @@ def gen_programs(n_inputs: int, max_depth: int) -> dict[int, set[Node]]:
     return prog_sets
 
 
-def main():
-    for spec in LEVELS:
-        # spec = LEVELS[1]
-        print(f"Component: {spec.name}")
-        # for inputs, outputs in spec.truth_table:
-        #     print(f"{inputs} -> {outputs}")
-        # print()
+@dataclass(frozen=True)
+class EvalResult:
+    rows: tuple[tuple[int, ...], ...]
 
+
+def eval_result(spec: Spec, node: Node) -> EvalResult:
+    rows = []
+    for inputs, outputs in spec.truth_table:
+        env = {i: val for i, val in enumerate(inputs)}
+        rows.append(tuple(eval_node(env, node)))
+    return EvalResult(tuple(rows))
+
+
+def grow(spec: Spec, cache: dict[EvalResult, Node]):
+    nodes: set[Node] = set(cache.values())
+    for a, b in product(nodes, nodes):
+        node = Nand(a, b)
+        result = eval_result(spec, node)
+        if result not in cache:
+            cache[result] = node
+
+
+def main():
+    base_path = Path(__file__).parent / "diagrams"
+    base_path.mkdir(exist_ok=True)
+    for spec in LEVELS[:4]:
+        print(f"Component: {spec.name}")
         start = time.perf_counter()
+
         max_depth = 3
         n_inputs = len(spec.truth_table[0][0])
-        prog_sets = gen_programs(n_inputs, max_depth)
-        gen_elapsed = time.perf_counter() - start
+        input_nodes = {Input(i) for i in range(n_inputs)}
+        cache: dict[EvalResult, Node] = {eval_result(spec, n): n for n in input_nodes}
 
-        start = time.perf_counter()
         found = False
-        for depth, programs in prog_sets.items():
+        for depth in range(1, max_depth + 1):
             if found:
                 break
-            print(f"Checking {len(programs)} programs at depth {depth}...")
-            for program in programs:
-                full_prog = Program((Output(program),))
+            grow(spec, cache)
+            nodes = cache.values()
+            print(f"Programs at depth {depth}: {len(nodes)}")
+            for node in sorted(nodes, key=lambda p: repr(p)):
+                full_prog = Program((Output(node),))
                 if check(spec, full_prog):
                     found = True
+                    n_gates = count_gates(full_prog)
                     print("Program found!")
-                    print(program)
+                    print(f"Gates: {n_gates}")
+                    # print(full_prog)
+
+                    dot = draw_circuit(full_prog, f"{spec.name}")
+                    graphviz_render(dot, base_path / f"{spec.name}")
+
                     # for inputs, outputs in spec.truth_table:
                     #     result = eval_program(full_prog, inputs)
                     #     print(f"{inputs} -> {result}")
@@ -178,7 +277,6 @@ def main():
             print("No solution found.")
         eval_elapsed = time.perf_counter() - start
 
-        print(f"Gen (depth={max_depth}) took: {gen_elapsed:0.2f}s")
         print(f"Eval took: {eval_elapsed:0.2f}s")
         print()
 
