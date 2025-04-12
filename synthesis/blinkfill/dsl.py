@@ -137,7 +137,7 @@ class ConstantStr(SubstringExpr):
     s: str
 
     def __repr__(self):  # pragma: no cover
-        return f"ConstantStr({self.s})"
+        return f'ConstantStr("{self.s}")'
 
 
 @dataclass(frozen=True)
